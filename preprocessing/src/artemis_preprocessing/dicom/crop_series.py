@@ -19,6 +19,9 @@ from artemis_preprocessing.dicom.copy_structures import copy_structures
 from artemis_preprocessing.utils import get_datetime
 
 
+CROPPABLE_MR_SERIES_DESCRIPTION_PREFIX = "sCT_sp_Pel_T2"
+
+
 @dataclass(frozen=True)
 class CropResult:
     """Outcome of an attempted registered-series crop."""
@@ -61,6 +64,10 @@ class CropSeriesError(RuntimeError):
     """Raised internally when a crop cannot be completed safely."""
 
 
+class IneligibleCropSeriesError(CropSeriesError):
+    """Raised when a series is intentionally excluded from image cropping."""
+
+
 def _as_vector(value, *, length: int, field: str) -> np.ndarray:
     if value is None or len(value) != length:
         raise CropSeriesError(f"Missing or invalid {field}")
@@ -73,7 +80,10 @@ def _as_vector(value, *, length: int, field: str) -> np.ndarray:
     return result
 
 
-def _load_series_slices(directory: str, series_uid: str) -> tuple[list[_Slice], np.ndarray]:
+def _load_series_slices(
+    directory: str,
+    series_uid: str,
+) -> tuple[list[_Slice], np.ndarray, bool]:
     records: list[tuple[Path, Dataset]] = []
     for path in Path(directory).rglob("*.dcm"):
         try:
@@ -88,6 +98,22 @@ def _load_series_slices(directory: str, series_uid: str) -> tuple[list[_Slice], 
 
     if not records:
         raise CropSeriesError(f"No image slices found for series {series_uid}")
+
+    if any(
+        str(getattr(ds, "Modality", "") or "").strip() != "MR"
+        for _, ds in records
+    ):
+        raise IneligibleCropSeriesError(
+            "Only MR series with SeriesDescription starting with "
+            f"'{CROPPABLE_MR_SERIES_DESCRIPTION_PREFIX}' are eligible for "
+            "cropping; leaving the image series unchanged"
+        )
+    crop_eligible = all(
+        str(getattr(ds, "SeriesDescription", "") or "")
+        .strip()
+        .startswith(CROPPABLE_MR_SERIES_DESCRIPTION_PREFIX)
+        for _, ds in records
+    )
 
     first_iop = _as_vector(
         getattr(records[0][1], "ImageOrientationPatient", None),
@@ -149,29 +175,30 @@ def _load_series_slices(directory: str, series_uid: str) -> tuple[list[_Slice], 
             raise CropSeriesError(f"Invalid Rows or Columns in {path.name}") from exc
         if rows != first_rows or columns != first_columns:
             raise CropSeriesError("Image slices do not share identical dimensions")
-        if getattr(ds, "Modality", "") not in {"CT", "MR"}:
-            raise CropSeriesError(f"Unsupported modality in {path.name}")
         if int(getattr(ds, "NumberOfFrames", 1) or 1) != 1:
             raise CropSeriesError("Multiframe images are not supported")
-        if int(getattr(ds, "SamplesPerPixel", 0) or 0) != 1:
-            raise CropSeriesError("Only single-sample monochrome images are supported")
-        if getattr(ds, "PhotometricInterpretation", "") not in {
-            "MONOCHROME1",
-            "MONOCHROME2",
-        }:
-            raise CropSeriesError("Only monochrome images are supported")
-        transfer_syntax = getattr(ds.file_meta, "TransferSyntaxUID", None)
-        if transfer_syntax is None:
-            raise CropSeriesError(f"Missing Transfer Syntax UID in {path.name}")
-        if transfer_syntax.is_compressed:
-            raise CropSeriesError("Compressed image data is not supported")
         sop_uid = str(getattr(ds, "SOPInstanceUID", "") or "")
         sop_class_uid = str(getattr(ds, "SOPClassUID", "") or "")
-        if not sop_uid or not sop_class_uid:
-            raise CropSeriesError(f"Missing SOP identifiers in {path.name}")
-        if sop_uid in seen_sops:
-            raise CropSeriesError(f"Duplicate SOP Instance UID {sop_uid}")
-        seen_sops.add(sop_uid)
+        if crop_eligible:
+            if int(getattr(ds, "SamplesPerPixel", 0) or 0) != 1:
+                raise CropSeriesError(
+                    "Only single-sample monochrome images are supported"
+                )
+            if getattr(ds, "PhotometricInterpretation", "") not in {
+                "MONOCHROME1",
+                "MONOCHROME2",
+            }:
+                raise CropSeriesError("Only monochrome images are supported")
+            transfer_syntax = getattr(ds.file_meta, "TransferSyntaxUID", None)
+            if transfer_syntax is None:
+                raise CropSeriesError(f"Missing Transfer Syntax UID in {path.name}")
+            if transfer_syntax.is_compressed:
+                raise CropSeriesError("Compressed image data is not supported")
+            if not sop_uid or not sop_class_uid:
+                raise CropSeriesError(f"Missing SOP identifiers in {path.name}")
+            if sop_uid in seen_sops:
+                raise CropSeriesError(f"Duplicate SOP Instance UID {sop_uid}")
+            seen_sops.add(sop_uid)
         slices.append(
             _Slice(
                 path=path,
@@ -191,7 +218,7 @@ def _load_series_slices(directory: str, series_uid: str) -> tuple[list[_Slice], 
     for previous, current in zip(slices, slices[1:]):
         if abs(current.position - previous.position) < 1e-4:
             raise CropSeriesError("Image series contains duplicate slice positions")
-    return slices, normal
+    return slices, normal, crop_eligible
 
 
 def _contour_points(contour: Dataset) -> np.ndarray:
@@ -284,16 +311,13 @@ def _target_in_plane_status(
     *,
     slices: list[_Slice],
     normal: np.ndarray,
-    crop_pixels: int,
+    crop_pixels: int | None,
 ) -> str | None:
-    """Classify whether the target fits the original and proposed crop FOVs."""
+    """Classify whether the target fits the acquired and proposed crop FOVs."""
 
     positions = np.asarray([item.position for item in slices], dtype=float)
     rows = slices[0].rows
     columns = slices[0].columns
-    minimum_index = crop_pixels - 0.5
-    maximum_column = columns - crop_pixels - 0.5
-    maximum_row = rows - crop_pixels - 0.5
     tolerance = 1e-3
     outside_reduced_fov = False
 
@@ -315,13 +339,17 @@ def _target_in_plane_status(
             or np.max(row_indices) > rows - 0.5 + tolerance
         ):
             return "outside_original_fov"
-        if (
-            np.min(column_indices) < minimum_index - tolerance
-            or np.max(column_indices) > maximum_column + tolerance
-            or np.min(row_indices) < minimum_index - tolerance
-            or np.max(row_indices) > maximum_row + tolerance
-        ):
-            outside_reduced_fov = True
+        if crop_pixels is not None:
+            minimum_index = crop_pixels - 0.5
+            maximum_column = columns - crop_pixels - 0.5
+            maximum_row = rows - crop_pixels - 0.5
+            if (
+                np.min(column_indices) < minimum_index - tolerance
+                or np.max(column_indices) > maximum_column + tolerance
+                or np.min(row_indices) < minimum_index - tolerance
+                or np.max(row_indices) > maximum_row + tolerance
+            ):
+                outside_reduced_fov = True
 
     if outside_reduced_fov:
         return "outside_reduced_fov"
@@ -615,10 +643,13 @@ def crop_registered_series(
     padding_slices: int = 2,
     in_plane_crop_pixels: int = 96,
 ) -> CropResult:
-    """Crop *series_uid* to a uniquely matching contoured ROI.
+    """Crop an eligible sCT MR *series_uid* to a matching contoured ROI.
 
-    Ambiguous or absent matching contours are deliberately treated as a safe
-    no-op. Geometry, write, and deletion failures return ``status="failed"``.
+    Acquired-field-of-view coverage is checked for every MR series. Only MR
+    series whose Series Description starts with ``sCT_sp_Pel_T2`` are cropped.
+    Other MR series and ambiguous or absent matching contours are deliberately
+    treated as safe no-ops. Geometry, write, and deletion failures return
+    ``status="failed"``.
     """
 
     try:
@@ -637,12 +668,15 @@ def crop_registered_series(
             )
             return CropResult(status="skipped", warning=warning)
 
-        slices, normal = _load_series_slices(current_directory, series_uid)
+        slices, normal, crop_eligible = _load_series_slices(
+            current_directory,
+            series_uid,
+        )
         original_rows = slices[0].rows
         original_columns = slices[0].columns
         cropped_rows = original_rows - 2 * in_plane_crop_pixels
         cropped_columns = original_columns - 2 * in_plane_crop_pixels
-        if cropped_rows <= 0 or cropped_columns <= 0:
+        if crop_eligible and (cropped_rows <= 0 or cropped_columns <= 0):
             raise CropSeriesError(
                 "Image Rows and Columns must both exceed twice the in-plane crop"
             )
@@ -683,29 +717,49 @@ def crop_registered_series(
             roi_contour,
             slices=slices,
             normal=normal,
-            crop_pixels=in_plane_crop_pixels,
+            crop_pixels=in_plane_crop_pixels if crop_eligible else None,
         )
-        if in_plane_status is not None:
-            if in_plane_status == "outside_original_fov":
-                warning_code = "insufficient_in_plane_coverage"
-                warning = (
-                    f"ROI '{roi_name}' extends outside the acquired in-plane "
-                    "field of view; leaving the image series unchanged"
-                )
-            else:
-                warning_code = "insufficient_in_plane_crop_margin"
-                warning = (
-                    f"ROI '{roi_name}' extends outside the proposed reduced "
-                    "in-plane field of view; leaving the image series unchanged"
-                )
+        if in_plane_status == "outside_original_fov":
             return CropResult(
                 status="skipped",
                 roi_name=roi_name,
                 original_rows=original_rows,
                 original_columns=original_columns,
                 source_series_uid=str(series_uid),
-                warning=warning,
-                warning_code=warning_code,
+                warning=(
+                    f"ROI '{roi_name}' extends outside the acquired in-plane "
+                    "field of view; leaving the image series unchanged"
+                ),
+                warning_code="insufficient_in_plane_coverage",
+            )
+
+        if not crop_eligible:
+            return CropResult(
+                status="skipped",
+                roi_name=roi_name,
+                original_rows=original_rows,
+                original_columns=original_columns,
+                source_series_uid=str(series_uid),
+                warning=(
+                    "Only MR series with SeriesDescription starting with "
+                    f"'{CROPPABLE_MR_SERIES_DESCRIPTION_PREFIX}' are eligible "
+                    "for cropping; leaving the image series unchanged"
+                ),
+                warning_code="ineligible_series_for_crop",
+            )
+
+        if in_plane_status == "outside_reduced_fov":
+            return CropResult(
+                status="skipped",
+                roi_name=roi_name,
+                original_rows=original_rows,
+                original_columns=original_columns,
+                source_series_uid=str(series_uid),
+                warning=(
+                    f"ROI '{roi_name}' extends outside the proposed reduced "
+                    "in-plane field of view; leaving the image series unchanged"
+                ),
+                warning_code="insufficient_in_plane_crop_margin",
             )
 
         first_contour = _nearest_slice_index(positions, min(projected_points))
@@ -794,6 +848,13 @@ def crop_registered_series(
             cropped_columns=cropped_columns,
             source_series_uid=str(series_uid),
             derived_series_uid=derived_series_uid,
+        )
+    except IneligibleCropSeriesError as exc:
+        return CropResult(
+            status="skipped",
+            source_series_uid=str(series_uid),
+            warning=str(exc),
+            warning_code="ineligible_series_for_crop",
         )
     except Exception as exc:
         return CropResult(status="failed", error=str(exc))
