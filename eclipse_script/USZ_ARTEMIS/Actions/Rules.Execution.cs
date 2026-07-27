@@ -10,19 +10,20 @@ namespace USZ_ARTEMIS.Actions
 {
     partial class Rules
     {
-        public static void ApplyRules(PlanSetup targetPlan, PlanSetup rulesSourcePlan)
+        public static RuleApplicationResult ApplyRules(PlanSetup targetPlan, PlanSetup rulesSourcePlan)
         {
             string rulesPath = RetrieveRulesFile(rulesSourcePlan);
             string path = ResolveRulesFilePath(rulesSourcePlan, rulesPath, "apply");
             if (path == null)
             {
-                return;
+                return RuleApplicationResult.Cancel();
             }
 
             var ruleSet = LoadRulesFromPath(path, targetPlan);
             StructureSet structureSet = targetPlan.StructureSet;
             var toDelete = structureSet.Structures
                 .Where(s =>
+                    !string.IsNullOrWhiteSpace(s.Id) &&
                     s.Id.EndsWith("_ph", StringComparison.OrdinalIgnoreCase) &&
                     !(
                         (s.Id.StartsWith("ptv", StringComparison.OrdinalIgnoreCase)
@@ -33,22 +34,66 @@ namespace USZ_ARTEMIS.Actions
                     ))
                 .ToList();
 
-            foreach (var structure in toDelete)
+            RuleMetadataPreparationPlan metadataPreparationPlan = null;
+            bool copyPlanRuleApplication = !ReferenceEquals(targetPlan, rulesSourcePlan);
+            if (copyPlanRuleApplication)
             {
-                structureSet.RemoveStructure(structure);
+                try
+                {
+                    metadataPreparationPlan = BuildMetadataPreparationPlan(
+                        ruleSet,
+                        targetPlan,
+                        rulesSourcePlan,
+                        toDelete);
+                }
+                catch (Exception e)
+                {
+                    MessageBox.Show(
+                        "Structure metadata preflight could not be completed:\n\n" +
+                        e.Message +
+                        "\n\nNo rules were applied.",
+                        "Plan copy structure metadata",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return RuleApplicationResult.Failure();
+                }
+
+                if (!metadataPreparationPlan.CanApply)
+                {
+                    MessageBox.Show(
+                        FormatMetadataPreflightFailure(metadataPreparationPlan),
+                        "Plan copy structure metadata",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return RuleApplicationResult.Failure();
+                }
             }
 
             var skippedDueToApproval = new List<string>();
 
             try
             {
+                foreach (var structure in toDelete)
+                {
+                    structureSet.RemoveStructure(structure);
+                }
+
+                if (metadataPreparationPlan != null)
+                {
+                    PrepareRuleOutputStructures(
+                        targetPlan.StructureSet,
+                        rulesSourcePlan.StructureSet,
+                        metadataPreparationPlan);
+                }
+
                 foreach (var rule in ruleSet.Rules)
                 {
                     string outputId = rule.OutputStructure;
                     if (!string.IsNullOrEmpty(outputId))
                     {
-                        var outStruct = targetPlan.StructureSet.Structures
-                            .FirstOrDefault(s => s.Id.Equals(outputId, StringComparison.OrdinalIgnoreCase));
+                        var outStruct = FindExistingStructure(
+                            targetPlan.StructureSet,
+                            outputId);
 
                         if (outStruct != null && outStruct.IsApproved)
                         {
@@ -121,11 +166,26 @@ namespace USZ_ARTEMIS.Actions
                             break;
                     }
                 }
+
+                if (metadataPreparationPlan != null)
+                {
+                    VerifyRuleOutputMetadata(
+                        ruleSet,
+                        targetPlan.StructureSet,
+                        rulesSourcePlan.StructureSet);
+                }
             }
             catch (Exception e)
             {
-                MessageBox.Show("An error occurred: " + e.Message);
-                return;
+                MessageBox.Show(
+                    "Rule application stopped before completion:\n\n" +
+                    e.Message +
+                    "\n\nDo not save the incomplete copied plan. Correct the problem or " +
+                    "discard the current Eclipse modifications before trying again.",
+                    "Rule application failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return RuleApplicationResult.Failure();
             }
 
             if (skippedDueToApproval.Count > 0)
@@ -140,7 +200,16 @@ namespace USZ_ARTEMIS.Actions
                     MessageBoxIcon.Warning);
             }
 
-            MessageBox.Show("Rules were applied");
+            string completionMessage = "Rules were applied";
+            if (metadataPreparationPlan?.Warnings.Count > 0)
+            {
+                completionMessage +=
+                    "\n\nMetadata warnings:\n- " +
+                    string.Join("\n- ", metadataPreparationPlan.Warnings);
+            }
+
+            MessageBox.Show(completionMessage);
+            return RuleApplicationResult.Success();
         }
 
         public static Structure EnsureHighResolution(Structure s)
@@ -356,8 +425,7 @@ namespace USZ_ARTEMIS.Actions
         public static Structure FindStructureFromId(PlanSetup SelectedPlan, string structureID, bool warnIfMissing, bool warnIfNotEmpty)
         {
             var structureSet = SelectedPlan.StructureSet;
-            var outStructure = structureSet.Structures
-                .FirstOrDefault(s => s.Id.Equals(structureID, StringComparison.OrdinalIgnoreCase));
+            var outStructure = FindExistingStructure(structureSet, structureID);
 
             bool isHelperPh = structureID.EndsWith("_Ph", StringComparison.OrdinalIgnoreCase);
 

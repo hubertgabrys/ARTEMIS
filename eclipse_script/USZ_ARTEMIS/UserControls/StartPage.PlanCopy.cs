@@ -315,7 +315,23 @@ namespace USZ_ARTEMIS
                 }
             }
 
-            Actions.Rules.ApplyRules(copiedPlan, originalPlan);
+            var ruleApplicationResult = Actions.Rules.ApplyRules(copiedPlan, originalPlan);
+            if (!ruleApplicationResult.Succeeded)
+            {
+                MessageBox.Show(
+                    ruleApplicationResult.Cancelled
+                        ? "Plan copy stopped because rule application was cancelled.\n\n" +
+                          "The incomplete copied plan remains in the current unsaved Eclipse " +
+                          "modifications. Remove it or discard the modifications before saving."
+                        : "Plan copy stopped because the rules could not be applied safely.\n\n" +
+                          "No target, aperture, or optimization-objective updates were performed " +
+                          "after the failure. Remove the incomplete copied plan or discard the " +
+                          "current Eclipse modifications before saving.",
+                    "Plan copy incomplete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
 
             var target = copiedPlan.StructureSet.Structures.FirstOrDefault(s => s.Id == copiedPlan.TargetVolumeID);
             if (target == null)
