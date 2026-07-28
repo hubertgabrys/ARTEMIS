@@ -200,9 +200,6 @@ namespace USZ_ARTEMIS.Core.Rules
                             "CONTROL"));
                 }
 
-                warnings.Add(
-                    $"Temporary helper '{displayId}' has no base-plan counterpart and will use " +
-                    "the fallback Volume Type 'CONTROL'.");
                 return;
             }
 

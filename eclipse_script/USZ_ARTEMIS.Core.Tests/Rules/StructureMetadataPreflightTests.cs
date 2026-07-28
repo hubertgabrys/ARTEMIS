@@ -102,7 +102,7 @@ public sealed class StructureMetadataPreflightTests
         var preparation = Assert.Single(result.Preparations);
         Assert.Equal(StructureMetadataPreparationKind.CreateTemporary, preparation.Kind);
         Assert.Equal("CONTROL", preparation.ExpectedVolumeType);
-        Assert.Single(result.Warnings);
+        Assert.Empty(result.Warnings);
     }
 
     [Fact]
