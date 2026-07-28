@@ -1,21 +1,44 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
+using USZ_ARTEMIS.Core.QA;
 using VMS.TPS.Common.Model.API;
 
 namespace USZ_ARTEMIS.QA
 {
+    class TargetVolumeComparison
+    {
+        public string Text { get; set; }
+        public QaStatus Status { get; set; }
+    }
+
     class Tools
     {
 
         public static string CompareAllTargetVolumes(PlanSetup adaptedPlan, PlanSetup originalPlan)
         {
+            StringBuilder output = new StringBuilder();
+            foreach (TargetVolumeComparison comparison in GetAllTargetVolumeComparisons(adaptedPlan, originalPlan))
+            {
+                output.Append(comparison.Text);
+                output.Append('\n');
+            }
+
+            return output.ToString();
+        }
+
+        public static List<TargetVolumeComparison> GetAllTargetVolumeComparisons(
+            PlanSetup adaptedPlan,
+            PlanSetup originalPlan)
+        {
             // compare all targets 
-            string outString = "";
+            List<TargetVolumeComparison> comparisons = new List<TargetVolumeComparison>();
 
             // loop over all adapted structures 
             foreach (Structure tempStrAdapted in adaptedPlan.StructureSet.Structures)
             {
                 double tempVolumeAdaptedStructure = 0;
-                double tempVolumeOriginaStructure = 0;
+                double? tempVolumeOriginaStructure = null;
 
                 // select only the targets
                 if (tempStrAdapted.DicomType.EndsWith("TV"))
@@ -43,15 +66,28 @@ namespace USZ_ARTEMIS.QA
                             }
 
                             // calculate change and write it to string
-                            if (tempVolumeAdaptedStructure == 0 || tempVolumeOriginaStructure == 0)
+                            QaPercentageClassification volumeComparison =
+                                QaStatusClassifier.ForTargetVolumes(
+                                    tempVolumeAdaptedStructure,
+                                    tempVolumeOriginaStructure,
+                                    2);
+                            if (!volumeComparison.DisplayedPercentage.HasValue)
                             {
-                                outString = outString + tempStrAdapted.Id + " not matched or zero volume\n";
+                                comparisons.Add(new TargetVolumeComparison
+                                {
+                                    Text = tempStrAdapted.Id + " not matched or zero volume",
+                                    Status = volumeComparison.Status
+                                });
                             }
                             else
                             {
-                                double volumeChangePerc = 100 * (tempVolumeAdaptedStructure - tempVolumeOriginaStructure) / tempVolumeOriginaStructure;
-                                double volumeChangeAbs = tempVolumeAdaptedStructure - tempVolumeOriginaStructure;
-                                outString = outString + tempStrAdapted.Id + " change = " + volumeChangePerc.ToString("F2") + " % (" + volumeChangeAbs.ToString("F2") + " cc)\n";
+                                double volumeChangeAbs =
+                                    tempVolumeAdaptedStructure - tempVolumeOriginaStructure.Value;
+                                comparisons.Add(new TargetVolumeComparison
+                                {
+                                    Text = tempStrAdapted.Id + " change = " + volumeComparison.DisplayedPercentage.Value.ToString("F2") + " % (" + volumeChangeAbs.ToString("F2") + " cc)",
+                                    Status = volumeComparison.Status
+                                });
                             }
 
 
@@ -65,7 +101,7 @@ namespace USZ_ARTEMIS.QA
 
             }
 
-            return outString;
+            return comparisons;
 
         }
 
