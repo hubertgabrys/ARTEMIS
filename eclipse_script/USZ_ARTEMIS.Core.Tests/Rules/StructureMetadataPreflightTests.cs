@@ -122,6 +122,173 @@ public sealed class StructureMetadataPreflightTests
     }
 
     [Fact]
+    public void ExistingEmptyInputIsAvailableWithoutPreparation()
+    {
+        var result = Evaluate(
+            references: [Snapshot("Bowel", "ORGAN")],
+            targets: [Snapshot("Bowel", "ORGAN", isEmpty: true)],
+            uses: [Use(["Bowel"], [])]);
+
+        Assert.True(result.CanApply);
+        Assert.Empty(result.Preparations);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void ExistingEmptyCriticalInputNotUsedForMarginIsAvailable()
+    {
+        var result = Evaluate(
+            references: [Snapshot("CTV1", "CTV")],
+            targets: [Snapshot("CTV1", "CTV", isEmpty: true)],
+            uses: [Use(["CTV1"], [])]);
+
+        Assert.True(result.CanApply);
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("GTV")]
+    [InlineData("CTV")]
+    [InlineData("PTV")]
+    [InlineData("ITV")]
+    [InlineData("EXTERNAL")]
+    public void ExistingEmptyCriticalMarginInputBlocksApplication(string volumeType)
+    {
+        var result = Evaluate(
+            references: [Snapshot("Required", volumeType)],
+            targets: [Snapshot("Required", volumeType, isEmpty: true)],
+            uses: [Use(["Required"], [], ["Required"])]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("used for margin generation"));
+    }
+
+    [Fact]
+    public void ExistingEmptyOrganMarginInputIsAvailable()
+    {
+        var result = Evaluate(
+            references: [Snapshot("Bowel", "ORGAN")],
+            targets: [Snapshot("Bowel", "ORGAN", isEmpty: true)],
+            uses: [Use(["Bowel"], [], ["Bowel"])]);
+
+        Assert.True(result.CanApply);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void MissingNonTargetInputIsCreatedEmptyFromReferenceMetadata()
+    {
+        var result = Evaluate(
+            references: [Snapshot("Bowel", "ORGAN", "SRT", "T-D4000")],
+            targets: [],
+            uses: [Use(["bowel"], [])]);
+
+        Assert.True(result.CanApply);
+        var preparation = Assert.Single(result.Preparations);
+        Assert.Equal(
+            StructureMetadataPreparationKind.CreateEmptyInputFromReference,
+            preparation.Kind);
+        Assert.Equal("ORGAN", preparation.ExpectedVolumeType);
+        Assert.Equal("bowel", preparation.StructureId);
+        Assert.Contains(result.Warnings, warning => warning.Contains("created empty"));
+    }
+
+    [Fact]
+    public void RepeatedMissingInputIsPreparedOnlyOnce()
+    {
+        var result = Evaluate(
+            references:
+            [
+                Snapshot("Bowel", "ORGAN"),
+                Snapshot("Combined1_Ph", "CONTROL"),
+                Snapshot("Combined2_Ph", "CONTROL")
+            ],
+            targets: [],
+            uses:
+            [
+                Use(["Bowel"], ["Combined1_Ph"]),
+                Use(["Bowel"], ["Combined2_Ph"])
+            ]);
+
+        Assert.True(result.CanApply);
+        Assert.Single(
+            result.Preparations,
+            preparation =>
+                preparation.Kind ==
+                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
+        Assert.Single(result.Warnings);
+    }
+
+    [Fact]
+    public void MissingInputWithoutReferenceBlocksApplication()
+    {
+        var result = Evaluate(
+            references: [],
+            targets: [],
+            uses: [Use(["Bowel"], [])]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(result.Errors, error => error.Contains("no matching structure"));
+        Assert.Empty(result.Preparations);
+    }
+
+    [Fact]
+    public void MissingInputWithUnknownReferenceVolumeTypeBlocksApplication()
+    {
+        var result = Evaluate(
+            references: [Snapshot("Bowel", " ")],
+            targets: [],
+            uses: [Use(["Bowel"], [])]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(result.Errors, error => error.Contains("no Volume Type"));
+        Assert.Empty(result.Preparations);
+    }
+
+    [Fact]
+    public void MissingInputThatIsAlsoAnOutputMustBeProducedFirst()
+    {
+        var result = Evaluate(
+            references: [Snapshot("Bowel", "ORGAN")],
+            targets: [],
+            uses: [Use(["Bowel"], ["Bowel"])]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("not produced by an earlier rule"));
+        Assert.DoesNotContain(
+            result.Preparations,
+            preparation =>
+                preparation.Kind ==
+                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
+    }
+
+    [Theory]
+    [InlineData("GTV")]
+    [InlineData("CTV")]
+    [InlineData("PTV")]
+    [InlineData("ITV")]
+    [InlineData("TREATED_VOLUME")]
+    [InlineData("IRRAD_VOLUME")]
+    [InlineData("EXTERNAL")]
+    public void MissingSafetyCriticalInputIsNotCreatedEmpty(string volumeType)
+    {
+        var result = Evaluate(
+            references: [Snapshot("Required", volumeType)],
+            targets: [],
+            uses: [Use(["Required"], [])]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("not created empty automatically"));
+        Assert.Empty(result.Preparations);
+    }
+
+    [Fact]
     public void InputRemovedBeforeRulesMustBeProducedBeforeItIsConsumed()
     {
         var reference = Snapshot("Intermediate_Ph", "CONTROL");
@@ -138,7 +305,35 @@ public sealed class StructureMetadataPreflightTests
             temporaryOutputIds: []);
 
         Assert.False(result.CanApply);
-        Assert.Contains(result.Errors, error => error.Contains("will not be available"));
+        Assert.Contains(result.Errors, error => error.Contains("removed before"));
+        Assert.Empty(result.Preparations);
+    }
+
+    [Fact]
+    public void AbsentGeneratedInputMustBeProducedBeforeItIsConsumed()
+    {
+        var result = Evaluate(
+            references:
+            [
+                Snapshot("Intermediate_Ph", "CONTROL"),
+                Snapshot("Final_Ph", "CONTROL")
+            ],
+            targets: [],
+            uses:
+            [
+                Use(["Intermediate_Ph"], ["Final_Ph"]),
+                Use([], ["Intermediate_Ph"])
+            ]);
+
+        Assert.False(result.CanApply);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("not produced by an earlier rule"));
+        Assert.DoesNotContain(
+            result.Preparations,
+            preparation =>
+                preparation.Kind ==
+                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
     }
 
     [Fact]
@@ -188,9 +383,13 @@ public sealed class StructureMetadataPreflightTests
 
     private static RuleStructureUse Use(
         IEnumerable<string> inputs,
-        IEnumerable<string> outputs)
+        IEnumerable<string> outputs,
+        IEnumerable<string>? geometryRequiredInputs = null)
     {
-        return new RuleStructureUse(inputs, outputs);
+        return new RuleStructureUse(
+            inputs,
+            outputs,
+            geometryRequiredInputs);
     }
 
     private static StructureMetadataSnapshot Snapshot(
@@ -198,8 +397,15 @@ public sealed class StructureMetadataPreflightTests
         string volumeType,
         string? scheme = null,
         string? code = null,
-        bool isApproved = false)
+        bool isApproved = false,
+        bool isEmpty = false)
     {
-        return new StructureMetadataSnapshot(id, volumeType, scheme, code, isApproved);
+        return new StructureMetadataSnapshot(
+            id,
+            volumeType,
+            scheme,
+            code,
+            isApproved,
+            isEmpty);
     }
 }
