@@ -71,7 +71,7 @@ namespace USZ_ARTEMIS.Core.QA
                 adaptedVolume == 0 ||
                 originalVolume.Value == 0)
             {
-                return new QaPercentageClassification(null, QaStatus.Warning);
+                return new QaPercentageClassification(null, QaStatus.Error);
             }
 
             double changePercentage =

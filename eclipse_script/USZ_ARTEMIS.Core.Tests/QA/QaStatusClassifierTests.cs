@@ -58,7 +58,7 @@ public sealed class QaStatusClassifierTests
     [Theory]
     [InlineData(0.0, 100.0)]
     [InlineData(100.0, 0.0)]
-    public void Zero_target_volume_has_no_percentage_and_is_a_warning(
+    public void Zero_target_volume_has_no_percentage_and_is_an_error(
         double adaptedVolume,
         double originalVolume)
     {
@@ -66,17 +66,33 @@ public sealed class QaStatusClassifierTests
             QaStatusClassifier.ForTargetVolumes(adaptedVolume, originalVolume, 2);
 
         Assert.Null(result.DisplayedPercentage);
-        Assert.Equal(QaStatus.Warning, result.Status);
+        Assert.Equal(QaStatus.Error, result.Status);
     }
 
     [Fact]
-    public void Unmatched_target_volume_has_no_percentage_and_is_a_warning()
+    public void Unmatched_target_volume_has_no_percentage_and_is_an_error()
     {
         QaPercentageClassification result =
             QaStatusClassifier.ForTargetVolumes(100.0, null, 2);
 
         Assert.Null(result.DisplayedPercentage);
-        Assert.Equal(QaStatus.Warning, result.Status);
+        Assert.Equal(QaStatus.Error, result.Status);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 100.0)]
+    [InlineData(double.PositiveInfinity, 100.0)]
+    [InlineData(100.0, double.NaN)]
+    [InlineData(100.0, double.PositiveInfinity)]
+    public void Non_finite_target_volume_has_no_percentage_and_is_an_error(
+        double adaptedVolume,
+        double originalVolume)
+    {
+        QaPercentageClassification result =
+            QaStatusClassifier.ForTargetVolumes(adaptedVolume, originalVolume, 2);
+
+        Assert.Null(result.DisplayedPercentage);
+        Assert.Equal(QaStatus.Error, result.Status);
     }
 
     [Theory]
