@@ -139,15 +139,6 @@ namespace USZ_ARTEMIS.Actions
                             }
                             break;
 
-                        case RuleType.MorphologicalOpening:
-                            if (rule.InputStructures.Count >= 1 && !string.IsNullOrEmpty(rule.OutputStructure))
-                            {
-                                string inId = rule.InputStructures[0];
-                                string marginStr = (rule.MarginMm ?? 0).ToString(CultureInfo.InvariantCulture);
-                                ApplyMorphologicalOpening(targetPlan, inId, marginStr, rule.OutputStructure);
-                            }
-                            break;
-
                         case RuleType.AsymmetricExpansion:
                             if (rule.InputStructures.Count >= 1 &&
                                 !string.IsNullOrEmpty(rule.OutputStructure) &&
@@ -320,12 +311,6 @@ namespace USZ_ARTEMIS.Actions
             structureIn1 = EnsureHighResolution(structureIn1);
 
             structureOut.SegmentVolume = structureIn1.SegmentVolume.Margin(Convert.ToDouble(margin_mm));
-        }
-
-        public static void ApplyMorphologicalOpening(PlanSetup SelectedPlan, string structureIn1Id, string margin_mm, string structureOutId)
-        {
-            ApplyExpansion(SelectedPlan, structureIn1Id, "-" + margin_mm, structureOutId);
-            ApplyExpansion(SelectedPlan, structureOutId, margin_mm, structureOutId);
         }
 
         public static void ApplyAsymmetricExpansion(PlanSetup SelectedPlan, string structureInId, string structureOutId, double[] marginsMm)

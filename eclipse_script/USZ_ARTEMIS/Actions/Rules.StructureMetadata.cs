@@ -134,7 +134,6 @@ namespace USZ_ARTEMIS.Actions
                 var geometryRequiredInputs = new List<string>();
 
                 if ((rule.Type == RuleType.Expansion ||
-                     rule.Type == RuleType.MorphologicalOpening ||
                      rule.Type == RuleType.AsymmetricExpansion) &&
                     inputs.Count > 0)
                 {
