@@ -12,6 +12,19 @@ namespace USZ_ARTEMIS.Actions
     {
         public static RuleApplicationResult ApplyRules(PlanSetup targetPlan, PlanSetup rulesSourcePlan)
         {
+            if (!ReferenceEquals(targetPlan, rulesSourcePlan) &&
+                AreSameStructureSet(targetPlan?.StructureSet, rulesSourcePlan?.StructureSet))
+            {
+                MessageBox.Show(
+                    "The copied plan and base plan share the same structure set. " +
+                    "Applying adaptation rules would modify the base plan's structures.\n\n" +
+                    "Choose a different destination structure set and copy the plan again.",
+                    "Plan copy structure set",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return RuleApplicationResult.Failure();
+            }
+
             string rulesPath = RetrieveRulesFile(rulesSourcePlan);
             string path = ResolveRulesFilePath(rulesSourcePlan, rulesPath, "apply");
             if (path == null)

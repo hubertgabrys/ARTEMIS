@@ -32,6 +32,25 @@ namespace USZ_ARTEMIS.Actions
             public bool CanApply => Errors.Count == 0;
         }
 
+        internal static bool AreSameStructureSet(
+            StructureSet left,
+            StructureSet right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(left.UID) &&
+                   !string.IsNullOrWhiteSpace(right.UID) &&
+                   string.Equals(left.UID, right.UID, StringComparison.Ordinal);
+        }
+
         private static RuleMetadataPreparationPlan BuildMetadataPreparationPlan(
             PlanRuleSet ruleSet,
             PlanSetup targetPlan,

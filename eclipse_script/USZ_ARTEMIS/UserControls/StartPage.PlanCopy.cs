@@ -179,10 +179,14 @@ namespace USZ_ARTEMIS
         private void PopulateStructureSets()
         {
             cbStructureSets.Items.Clear();
+            StructureSet baseStructureSet = GetSelectedPlan()?.StructureSet;
 
             var filteredSS = context.Patient.StructureSets
                 .Where(ss =>
                 {
+                    if (Actions.Rules.AreSameStructureSet(ss, baseStructureSet))
+                        return false;
+
                     var img = ss.Image;
                     string imgId = img.Id;
                     if (imgId.Contains("kVCBCT") || imgId.Contains("QW") || imgId.Contains("QB"))
@@ -248,6 +252,20 @@ namespace USZ_ARTEMIS
                 originalPlan.Id.EndsWith("aE"))
             {
                 MessageBox.Show("Please select the base plan", "Plan Copy Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (Actions.Rules.AreSameStructureSet(
+                    newStructureSet,
+                    originalPlan.StructureSet))
+            {
+                MessageBox.Show(
+                    "The base plan's own structure set cannot be used as the copy destination. " +
+                    "Choose a different structure set.",
+                    "Plan Copy Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                PopulateStructureSets();
                 return;
             }
 
