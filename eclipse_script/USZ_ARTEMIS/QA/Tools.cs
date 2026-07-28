@@ -1,7 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
+using USZ_ARTEMIS.Core.QA;
 using VMS.TPS.Common.Model.API;
 
 namespace USZ_ARTEMIS.QA
@@ -9,7 +9,7 @@ namespace USZ_ARTEMIS.QA
     class TargetVolumeComparison
     {
         public string Text { get; set; }
-        public double? ChangePercentage { get; set; }
+        public QaStatus Status { get; set; }
     }
 
     class Tools
@@ -38,7 +38,7 @@ namespace USZ_ARTEMIS.QA
             foreach (Structure tempStrAdapted in adaptedPlan.StructureSet.Structures)
             {
                 double tempVolumeAdaptedStructure = 0;
-                double tempVolumeOriginaStructure = 0;
+                double? tempVolumeOriginaStructure = null;
 
                 // select only the targets
                 if (tempStrAdapted.DicomType.EndsWith("TV"))
@@ -66,26 +66,27 @@ namespace USZ_ARTEMIS.QA
                             }
 
                             // calculate change and write it to string
-                            if (tempVolumeAdaptedStructure == 0 || tempVolumeOriginaStructure == 0)
+                            QaPercentageClassification volumeComparison =
+                                QaStatusClassifier.ForTargetVolumes(
+                                    tempVolumeAdaptedStructure,
+                                    tempVolumeOriginaStructure,
+                                    2);
+                            if (!volumeComparison.DisplayedPercentage.HasValue)
                             {
                                 comparisons.Add(new TargetVolumeComparison
                                 {
                                     Text = tempStrAdapted.Id + " not matched or zero volume",
-                                    ChangePercentage = null
+                                    Status = volumeComparison.Status
                                 });
                             }
                             else
                             {
-                                double volumeChangePerc = 100 * (tempVolumeAdaptedStructure - tempVolumeOriginaStructure) / tempVolumeOriginaStructure;
-                                double volumeChangeAbs = tempVolumeAdaptedStructure - tempVolumeOriginaStructure;
-                                double displayedVolumeChangePerc = Math.Round(
-                                    volumeChangePerc,
-                                    2,
-                                    MidpointRounding.AwayFromZero);
+                                double volumeChangeAbs =
+                                    tempVolumeAdaptedStructure - tempVolumeOriginaStructure.Value;
                                 comparisons.Add(new TargetVolumeComparison
                                 {
-                                    Text = tempStrAdapted.Id + " change = " + displayedVolumeChangePerc.ToString("F2") + " % (" + volumeChangeAbs.ToString("F2") + " cc)",
-                                    ChangePercentage = displayedVolumeChangePerc
+                                    Text = tempStrAdapted.Id + " change = " + volumeComparison.DisplayedPercentage.Value.ToString("F2") + " % (" + volumeChangeAbs.ToString("F2") + " cc)",
+                                    Status = volumeComparison.Status
                                 });
                             }
 

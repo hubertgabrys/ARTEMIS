@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using USZ_ARTEMIS.Configuration;
+using USZ_ARTEMIS.Core.QA;
 using USZ_ARTEMIS.QA;
 using VMS.TPS.Common.Model.API;
 
@@ -29,23 +30,39 @@ namespace USZ_ARTEMIS
                 PagePadding = new Thickness(4)
             };
 
-            if (selectedPlan.DosePerFraction.ValueAsString.Equals(originalPlan.DosePerFraction.ValueAsString))
+            bool isDosePerFractionIdentical =
+                selectedPlan.DosePerFraction.ValueAsString.Equals(originalPlan.DosePerFraction.ValueAsString);
+            if (isDosePerFractionIdentical)
             {
-                AddQaOutputLine(outputQA, QaOkPrefix + "Dose/fx is identical", Brushes.Green);
+                AddQaStatusLine(
+                    outputQA,
+                    "Dose/fx is identical",
+                    QaStatusClassifier.ForMatch(isDosePerFractionIdentical));
             }
             else
             {
-                AddQaOutputLine(outputQA, QaErrorPrefix + "Dose/fx is different!", Brushes.Red);
+                AddQaStatusLine(
+                    outputQA,
+                    "Dose/fx is different!",
+                    QaStatusClassifier.ForMatch(isDosePerFractionIdentical));
             }
             AddQaOutputSeparator(outputQA);
 
-            if (selectedPlan.PrimaryReferencePoint.Id.Equals(originalPlan.PrimaryReferencePoint.Id))
+            bool isReferencePointIdentical =
+                selectedPlan.PrimaryReferencePoint.Id.Equals(originalPlan.PrimaryReferencePoint.Id);
+            if (isReferencePointIdentical)
             {
-                AddQaOutputLine(outputQA, QaOkPrefix + "Ref. point is identical", Brushes.Green);
+                AddQaStatusLine(
+                    outputQA,
+                    "Ref. point is identical",
+                    QaStatusClassifier.ForMatch(isReferencePointIdentical));
             }
             else
             {
-                AddQaOutputLine(outputQA, QaErrorPrefix + "Ref. point is different!", Brushes.Red);
+                AddQaStatusLine(
+                    outputQA,
+                    "Ref. point is different!",
+                    QaStatusClassifier.ForMatch(isReferencePointIdentical));
             }
             AddQaOutputSeparator(outputQA);
 
@@ -91,39 +108,36 @@ namespace USZ_ARTEMIS
 
                 if (Math.Abs(originalMmo) < 1e-9)
                 {
-                    AddQaOutputLine(
+                    AddQaStatusLine(
                         outputQA,
-                        QaWarningPrefix + "MMO = " + adaptedMmo.ToString("F1") +
+                        "MMO = " + adaptedMmo.ToString("F1") +
                         " mm (reference " + originalMmo.ToString("F1") +
                         " mm; n/a)",
-                        Brushes.DarkOrange);
+                        QaStatusClassifier.ForMmoChange(null));
                 }
                 else
                 {
                     double changePerc = 100.0 * (adaptedMmo - originalMmo) / originalMmo;
-                    double displayedChangePerc = RoundPercentageForDisplay(changePerc, 1);
-                    bool isAcceptable = displayedChangePerc >= -20.0;
+                    double displayedChangePerc =
+                        QaStatusClassifier.RoundPercentageForDisplay(changePerc, 1);
                     string sign = displayedChangePerc >= 0 ? "+" : "";
 
-                    AddQaOutputLine(
+                    AddQaStatusLine(
                         outputQA,
-                        (isAcceptable ? QaOkPrefix : QaWarningPrefix) +
                         "MMO = " + adaptedMmo.ToString("F1") +
                         " mm (reference " + originalMmo.ToString("F1") +
                         " mm; " + sign + displayedChangePerc.ToString("F1") + "%)",
-                        isAcceptable ? Brushes.Green : Brushes.DarkOrange);
+                        QaStatusClassifier.ForMmoChange(displayedChangePerc));
                 }
             }
             AddQaOutputSeparator(outputQA);
 
             foreach (TargetVolumeComparison comparison in QA.Tools.GetAllTargetVolumeComparisons(selectedPlan, originalPlan))
             {
-                bool isAcceptable = comparison.ChangePercentage.HasValue &&
-                                    Math.Abs(comparison.ChangePercentage.Value) <= 20.0;
-                AddQaOutputLine(
+                AddQaStatusLine(
                     outputQA,
-                    (isAcceptable ? QaOkPrefix : QaWarningPrefix) + comparison.Text,
-                    isAcceptable ? Brushes.Green : Brushes.DarkOrange);
+                    comparison.Text,
+                    comparison.Status);
             }
             AddQaOutputSeparator(outputQA);
 
@@ -151,21 +165,33 @@ namespace USZ_ARTEMIS
             }
 
             double muChangePerc = 100 * (totalMuSelected - totalMuOriginal) / totalMuOriginal;
-            double displayedMuChangePerc = RoundPercentageForDisplay(muChangePerc, 1);
-            bool isMuChangeAcceptable = Math.Abs(displayedMuChangePerc) <= 20.0;
-            AddQaOutputLine(
+            double displayedMuChangePerc =
+                QaStatusClassifier.RoundPercentageForDisplay(muChangePerc, 1);
+            AddQaStatusLine(
                 outputQA,
-                (isMuChangeAcceptable ? QaOkPrefix : QaWarningPrefix) +
                 "MUs Change = " + displayedMuChangePerc.ToString("F1") + " %",
-                isMuChangeAcceptable ? Brushes.Green : Brushes.DarkOrange);
+                QaStatusClassifier.ForSymmetricChange(displayedMuChangePerc));
             AddQaOutputSeparator(outputQA);
 
             txtOutputQA.Document = outputQA;
         }
 
-        private static double RoundPercentageForDisplay(double percentage, int decimalPlaces)
+        private static void AddQaStatusLine(FlowDocument document, string text, QaStatus status)
         {
-            return Math.Round(percentage, decimalPlaces, MidpointRounding.AwayFromZero);
+            switch (status)
+            {
+                case QaStatus.Acceptable:
+                    AddQaOutputLine(document, QaOkPrefix + text, Brushes.Green);
+                    break;
+                case QaStatus.Warning:
+                    AddQaOutputLine(document, QaWarningPrefix + text, Brushes.DarkOrange);
+                    break;
+                case QaStatus.Error:
+                    AddQaOutputLine(document, QaErrorPrefix + text, Brushes.Red);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status), status, null);
+            }
         }
 
         private static void AddQaOutputLine(FlowDocument document, string text, Brush foreground = null)
