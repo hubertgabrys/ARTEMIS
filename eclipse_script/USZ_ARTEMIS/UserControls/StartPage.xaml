@@ -219,12 +219,14 @@
                       ShowsPreview="True"
                       Background="#22000000"/>
 
-        <!-- RIGHT PANEL: Output TextBox -->
-        <TextBox x:Name="txtOutputQA"
-                 Grid.Column="4"
-                 MinHeight="300"
-                 TextWrapping="Wrap"
-                 IsReadOnly="True"
-                 TextChanged="txtOutputQA_TextChanged"/>
+        <!-- RIGHT PANEL: QA output with per-result status colors -->
+        <RichTextBox x:Name="txtOutputQA"
+                     Grid.Column="4"
+                     MinHeight="300"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Disabled">
+            <FlowDocument PagePadding="4"/>
+        </RichTextBox>
     </Grid>
 </UserControl>

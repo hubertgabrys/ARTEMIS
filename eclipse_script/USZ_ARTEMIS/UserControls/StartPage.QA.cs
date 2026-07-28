@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using USZ_ARTEMIS.Configuration;
 using USZ_ARTEMIS.QA;
 using VMS.TPS.Common.Model.API;
@@ -13,32 +15,39 @@ namespace USZ_ARTEMIS
 {
     public partial class StartPage
     {
+        private const string QaOkPrefix = "\u2713 ";
+        private const string QaWarningPrefix = "\u26A0 ";
+        private const string QaErrorPrefix = "\u2717 ";
+
         private void BtnComparePlans_Click(object sender, RoutedEventArgs e)
         {
             PlanSetup selectedPlan = GetSelectedPlan();
             PlanSetup originalPlan = QA.Tools.GetOriginalPlan(selectedPlan);
 
-            string outputQA = string.Empty;
+            FlowDocument outputQA = new FlowDocument
+            {
+                PagePadding = new Thickness(4)
+            };
 
             if (selectedPlan.DosePerFraction.ValueAsString.Equals(originalPlan.DosePerFraction.ValueAsString))
             {
-                outputQA += "Dose/fx is identical\n";
+                AddQaOutputLine(outputQA, QaOkPrefix + "Dose/fx is identical", Brushes.Green);
             }
             else
             {
-                outputQA += "ERROR! - Dose/fx is different!\n";
+                AddQaOutputLine(outputQA, QaErrorPrefix + "Dose/fx is different!", Brushes.Red);
             }
-            outputQA += "________________________________\n\n";
+            AddQaOutputSeparator(outputQA);
 
             if (selectedPlan.PrimaryReferencePoint.Id.Equals(originalPlan.PrimaryReferencePoint.Id))
             {
-                outputQA += "Ref. point is identical\n";
+                AddQaOutputLine(outputQA, QaOkPrefix + "Ref. point is identical", Brushes.Green);
             }
             else
             {
-                outputQA += "ERROR! - Ref. point is different!\n";
+                AddQaOutputLine(outputQA, QaErrorPrefix + "Ref. point is different!", Brushes.Red);
             }
-            outputQA += "________________________________\n\n";
+            AddQaOutputSeparator(outputQA);
 
             List<Beam> inBeamsSelected = selectedPlan.Beams.ToList();
             List<Beam> therapyBeamsSelected = new List<Beam>();
@@ -82,24 +91,41 @@ namespace USZ_ARTEMIS
 
                 if (Math.Abs(originalMmo) < 1e-9)
                 {
-                    outputQA += "MMO = " + adaptedMmo.ToString("F1") +
-                                " mm (reference " + originalMmo.ToString("F1") +
-                                " mm; n/a)\n";
+                    AddQaOutputLine(
+                        outputQA,
+                        QaWarningPrefix + "MMO = " + adaptedMmo.ToString("F1") +
+                        " mm (reference " + originalMmo.ToString("F1") +
+                        " mm; n/a)",
+                        Brushes.DarkOrange);
                 }
                 else
                 {
                     double changePerc = 100.0 * (adaptedMmo - originalMmo) / originalMmo;
-                    string sign = changePerc >= 0 ? "+" : "";
+                    double displayedChangePerc = RoundPercentageForDisplay(changePerc, 1);
+                    bool isAcceptable = displayedChangePerc >= -20.0;
+                    string sign = displayedChangePerc >= 0 ? "+" : "";
 
-                    outputQA += "MMO = " + adaptedMmo.ToString("F1") +
-                                " mm (reference " + originalMmo.ToString("F1") +
-                                " mm; " + sign + changePerc.ToString("F1") + "%)\n";
+                    AddQaOutputLine(
+                        outputQA,
+                        (isAcceptable ? QaOkPrefix : QaWarningPrefix) +
+                        "MMO = " + adaptedMmo.ToString("F1") +
+                        " mm (reference " + originalMmo.ToString("F1") +
+                        " mm; " + sign + displayedChangePerc.ToString("F1") + "%)",
+                        isAcceptable ? Brushes.Green : Brushes.DarkOrange);
                 }
             }
-            outputQA += "________________________________\n\n";
+            AddQaOutputSeparator(outputQA);
 
-            outputQA += QA.Tools.CompareAllTargetVolumes(selectedPlan, originalPlan);
-            outputQA += "________________________________\n\n";
+            foreach (TargetVolumeComparison comparison in QA.Tools.GetAllTargetVolumeComparisons(selectedPlan, originalPlan))
+            {
+                bool isAcceptable = comparison.ChangePercentage.HasValue &&
+                                    Math.Abs(comparison.ChangePercentage.Value) <= 20.0;
+                AddQaOutputLine(
+                    outputQA,
+                    (isAcceptable ? QaOkPrefix : QaWarningPrefix) + comparison.Text,
+                    isAcceptable ? Brushes.Green : Brushes.DarkOrange);
+            }
+            AddQaOutputSeparator(outputQA);
 
             double totalMuSelected = 0;
             double totalMuOriginal = 0;
@@ -125,10 +151,45 @@ namespace USZ_ARTEMIS
             }
 
             double muChangePerc = 100 * (totalMuSelected - totalMuOriginal) / totalMuOriginal;
-            outputQA += "MUs Change = " + muChangePerc.ToString("F1") + " % \n";
-            outputQA += "________________________________\n\n";
+            double displayedMuChangePerc = RoundPercentageForDisplay(muChangePerc, 1);
+            bool isMuChangeAcceptable = Math.Abs(displayedMuChangePerc) <= 20.0;
+            AddQaOutputLine(
+                outputQA,
+                (isMuChangeAcceptable ? QaOkPrefix : QaWarningPrefix) +
+                "MUs Change = " + displayedMuChangePerc.ToString("F1") + " %",
+                isMuChangeAcceptable ? Brushes.Green : Brushes.DarkOrange);
+            AddQaOutputSeparator(outputQA);
 
-            txtOutputQA.Text = outputQA;
+            txtOutputQA.Document = outputQA;
+        }
+
+        private static double RoundPercentageForDisplay(double percentage, int decimalPlaces)
+        {
+            return Math.Round(percentage, decimalPlaces, MidpointRounding.AwayFromZero);
+        }
+
+        private static void AddQaOutputLine(FlowDocument document, string text, Brush foreground = null)
+        {
+            Run run = new Run(text);
+            if (foreground != null)
+            {
+                run.Foreground = foreground;
+            }
+
+            document.Blocks.Add(new Paragraph(run)
+            {
+                Margin = new Thickness(0)
+            });
+        }
+
+        private static void AddQaOutputSeparator(FlowDocument document)
+        {
+            AddQaOutputLine(document, "________________________________");
+            document.Blocks.Add(new Paragraph
+            {
+                Margin = new Thickness(0),
+                FontSize = 6
+            });
         }
 
         private void BtnPerformQA_Click(object sender, RoutedEventArgs e)
@@ -148,10 +209,6 @@ namespace USZ_ARTEMIS
             Tools.Actions.RecalculatePlan(context, GetSelectedPlan(), qaPlanWater);
             Tools.Actions.RenameCopyPlan(context, GetSelectedPlan(), GetSelectedCourse());
             SyntheticCT.CreatePDF(context, GetSelectedPlan(), qaPlanWater);
-        }
-
-        private void txtOutputQA_TextChanged(object sender, TextChangedEventArgs e)
-        {
         }
 
         private void BtnSendToSciMoCa_Click(object sender, RoutedEventArgs e)
