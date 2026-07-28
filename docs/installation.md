@@ -27,11 +27,8 @@ eclipse_script/ESAPI 18.1/
 Open `eclipse_script/USZ_ARTEMIS.sln` and restore NuGet packages before building.
 
 Copy `eclipse_script/USZ_ARTEMIS/Configuration/USZ_ARTEMIS.AppPaths.example.json`
-to a JSON file whose stem matches the ESAPI DLL and replace the placeholder
-paths for the clinical deployment. For example,
-`USZ_ARTEMIS_v26.7.20.2.esapi.dll` uses
-`USZ_ARTEMIS_v26.7.20.2.esapi.json`. The JSON may sit beside the deployed ESAPI
-assembly or be referenced with the `USZ_ARTEMIS_APP_PATHS` environment
-variable. When a JSON matching `$(AssemblyName).json` exists under the source
-`Configuration/` directory, the Visual Studio build copies it beside the
-output DLL.
+to `USZ_ARTEMIS.esapi.json` and replace the placeholder paths for the clinical
+deployment. The JSON may sit beside the deployed ESAPI assembly or be
+referenced with the `USZ_ARTEMIS_APP_PATHS` environment variable. When
+`USZ_ARTEMIS.esapi.json` exists under the source `Configuration/` directory,
+the Visual Studio build copies it beside the output DLL.
