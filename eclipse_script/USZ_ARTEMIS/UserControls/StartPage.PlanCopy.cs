@@ -2,11 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using USZ_ARTEMIS.Core.Planning;
-using USZ_ARTEMIS.DataQualification;
 using USZ_ARTEMIS.StructureCreation;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
@@ -15,17 +13,8 @@ namespace USZ_ARTEMIS
 {
     public partial class StartPage
     {
-        private static readonly Regex RX_PLAN = new Regex(
-            @"^[A-Z]{2}(?:[a-z]{3})?(?<mid>[^_]+)_",
-            RegexOptions.Compiled);
-
-        private static readonly Regex RX_PTV = new Regex(
-            @"^PTV\d+_V(?<mid>[^_]+)_[^+]+\+2cm_Ph$",
-            RegexOptions.Compiled);
-
-        private static readonly Regex RX_PTV_FALLBACK = new Regex(
-            @"^PTV(?<mid>.*)\+2cm_Ph$",
-            RegexOptions.Compiled);
+        private const double PlanCopyPtvFitMarginMm = 5.0;
+        private const string PlanCopyPtvFitStructureBaseId = "zPtvFit";
 
         private Course GetSelectedCourse()
         {
@@ -205,20 +194,74 @@ namespace USZ_ARTEMIS
             }
         }
 
-        private static string ExtractTargetFromPlanId(string s)
+        private static Structure AddTemporaryPtvFitStructure(StructureSet structureSet)
         {
-            var m = RX_PLAN.Match(s);
-            if (!m.Success)
-                throw new ArgumentException($"Plan ID '{s}' is not in the expected format");
-            return m.Groups["mid"].Value;
+            string candidate = PlanCopyPtvFitStructureBaseId;
+            while (structureSet.Structures.Any(structure =>
+                structure.Id.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (candidate.Length >= 16)
+                {
+                    throw new InvalidOperationException(
+                        "Could not create a uniquely named temporary PTV fitting structure.");
+                }
+
+                candidate += "Z";
+            }
+
+            if (!structureSet.CanAddStructure("CONTROL", candidate))
+            {
+                throw new InvalidOperationException(
+                    "Eclipse cannot add the temporary PTV fitting structure.");
+            }
+
+            return structureSet.AddStructure("CONTROL", candidate);
         }
 
-        private static string ExtractTargetFromPtvRing(string s)
+        private static void PopulatePtvFitStructure(
+            Structure fitStructure,
+            IReadOnlyList<Structure> ptvs)
         {
-            var m = RX_PTV.Match(s);
-            if (!m.Success)
-                throw new ArgumentException($"PTV ring name '{s}' is not in the expected PTV...+2cm_Ph format");
-            return m.Groups["mid"].Value;
+            if (ptvs.Any(ptv => ptv.IsHighResolution))
+            {
+                if (!fitStructure.CanConvertToHighResolution())
+                {
+                    throw new InvalidOperationException(
+                        "The temporary PTV fitting structure cannot be converted to high resolution.");
+                }
+
+                fitStructure.ConvertToHighResolution();
+                if (!fitStructure.IsHighResolution)
+                {
+                    throw new InvalidOperationException(
+                        "The temporary PTV fitting structure did not convert to high resolution.");
+                }
+            }
+
+            var union = ptvs[0].SegmentVolume;
+            for (int i = 1; i < ptvs.Count; i++)
+            {
+                union = union.Or(ptvs[i].SegmentVolume);
+            }
+
+            fitStructure.SegmentVolume = union.Margin(PlanCopyPtvFitMarginMm);
+            if (fitStructure.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    "The current PTV union plus 5 mm is empty.");
+            }
+        }
+
+        private static string CombinePlanCopyFitErrors(
+            string existingError,
+            string additionalError)
+        {
+            if (string.IsNullOrWhiteSpace(existingError))
+            {
+                return additionalError;
+            }
+
+            return existingError + "\n\nCleanup error: " + additionalError;
         }
 
         private void BtnCopyPlan_Click(object sender, RoutedEventArgs e)
@@ -359,117 +402,98 @@ namespace USZ_ARTEMIS
                 copiedPlan.SetTargetStructureIfNoDose(targetVolume, errString);
             }
 
-            string targetPattern;
+            var currentPtvs = copiedPlan.StructureSet.Structures
+                .Where(structure => PlanCopyPtvSelection.IsEligible(
+                    structure.Id,
+                    structure.DicomType,
+                    structure.IsEmpty))
+                .OrderBy(structure => structure.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var treatmentBeams = copiedPlan.Beams
+                .Where(beam => !beam.IsSetupField)
+                .OrderBy(beam => beam.BeamNumber)
+                .ToList();
+
+            Structure fitStructure = null;
+            string fitError = null;
             try
             {
-                targetPattern = ExtractTargetFromPlanId(copiedPlan.Id);
-            }
-            catch (ArgumentException ex)
-            {
-                MessageBox.Show(
-                    $"Invalid plan ID format: {ex.Message}",
-                    "Structure selection error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            var candidates = copiedPlan.StructureSet.Structures.Where(s => RX_PTV.IsMatch(s.Id)).ToList();
-            var candidatesFallback = copiedPlan.StructureSet.Structures.Where(s => RX_PTV_FALLBACK.IsMatch(s.Id)).ToList();
-
-            if (candidatesFallback.Count == 0)
-            {
-                MessageBox.Show("No PTV rings found in the structure set.", "Structure selection error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            var matches = new List<Structure>();
-            foreach (var s in candidates)
-            {
-                try
+                if (currentPtvs.Count == 0)
                 {
-                    if (ExtractTargetFromPtvRing(s.Id) == targetPattern)
-                        matches.Add(s);
+                    throw new InvalidOperationException(
+                        "No non-empty current-course PTV structures were found. " +
+                        "Eligible structures must have DICOM type PTV and an ID starting with PTV.");
                 }
-                catch
+
+                if (treatmentBeams.Count == 0)
                 {
+                    throw new InvalidOperationException(
+                        "No treatment beams were found in the copied plan.");
                 }
-            }
 
-            if (matches.Count == 0)
-            {
-                if (candidatesFallback.Count == 1)
+                fitStructure = AddTemporaryPtvFitStructure(copiedPlan.StructureSet);
+                PopulatePtvFitStructure(fitStructure, currentPtvs);
+
+                foreach (var beam in treatmentBeams)
                 {
-                    var fallback = candidatesFallback[0];
-                    MessageBox.Show(
-                        $"Expected PTV ring for target V{targetPattern} but found none.\n" +
-                        $"Falling back to the only available ring: {fallback.Id}",
-                        "Structure selection warning",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    matches.Add(fallback);
-                }
-                else
-                {
-                    MessageBox.Show(
-                        $"Expected PTV ring for target V{targetPattern} but found none.\n" +
-                        $"Available rings: [{string.Join(", ", candidatesFallback.Select(s => s.Id))}]",
-                        "Structure selection error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                    return;
-                }
-            }
-
-            if (matches.Count > 1)
-            {
-                MessageBox.Show(
-                    $"Multiple PTV rings found for target V{targetPattern}: [{string.Join(", ", matches.Select(s => s.Id))}]",
-                    "Structure selection error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            var ptvPlus2cm = matches[0];
-            bool requiresManualJawAndApertureAdjustment = false;
-            PlanCopyApertureSafety apertureSafety;
-            try
-            {
-                var ptvsOutsideRing = DataChecker.FindPtvsOutsideStructure(
-                    copiedPlan.StructureSet,
-                    ptvPlus2cm);
-                apertureSafety = PlanCopyApertureSafety.FromContainmentCheck(
-                    ptvPlus2cm.Id,
-                    ptvsOutsideRing.Select(ptv => ptv.Id));
-            }
-            catch (Exception ex)
-            {
-                apertureSafety = PlanCopyApertureSafety.FromFailedCheck(ptvPlus2cm.Id, ex.Message);
-            }
-
-            if (apertureSafety.AllowAutomaticOptimization)
-            {
-                foreach (var beam in copiedPlan.Beams.Where(b => !b.Id.Contains("Setup")))
-                {
-                    beam.FitCollimatorToStructure(new FitToStructureMargins(0, 0, 0, 0), ptvPlus2cm, true, true, false);
+                    beam.FitCollimatorToStructure(
+                        new FitToStructureMargins(0, 0, 0, 0),
+                        fitStructure,
+                        true,
+                        true,
+                        false);
                     if (beam.ControlPoints.Count > 2)
                     {
                         beam.FitArcOptimizationApertureToCollimatorJaws();
                     }
                 }
-
-                MessageBox.Show("Jaws adjusted to PTV+2cm_Ph and arc apertures set to jaws!", "Done", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            else
+            catch (Exception ex)
             {
-                requiresManualJawAndApertureAdjustment = true;
+                fitError = ex.Message;
+            }
+            finally
+            {
+                if (fitStructure != null)
+                {
+                    try
+                    {
+                        if (!copiedPlan.StructureSet.CanRemoveStructure(fitStructure))
+                        {
+                            throw new InvalidOperationException(
+                                $"Eclipse cannot remove temporary structure '{fitStructure.Id}'.");
+                        }
+
+                        copiedPlan.StructureSet.RemoveStructure(fitStructure);
+                    }
+                    catch (Exception ex)
+                    {
+                        fitError = CombinePlanCopyFitErrors(fitError, ex.Message);
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(fitError))
+            {
                 MessageBox.Show(
-                    apertureSafety.WarningMessage,
-                    "PTV and +2 cm ring warning",
+                    "Plan copy stopped because ARTEMIS could not safely fit the jaws and apertures " +
+                    "to the current PTV union plus 5 mm.\n\n" +
+                    "No optimization objectives were copied after this failure. The incomplete " +
+                    "copied plan may contain partial beam changes and remains in the current unsaved " +
+                    "Eclipse modifications. Remove it or discard the modifications before saving.\n\n" +
+                    $"Details: {fitError}",
+                    "Plan copy incomplete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
+                return;
             }
+
+            MessageBox.Show(
+                "Jaws adjusted to the current PTV union plus 5 mm and arc apertures set to the jaws.",
+                "Done",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
 
             var structureLookup = copiedPlan.StructureSet.Structures
                 .Where(structure => !structure.IsEmpty && !string.IsNullOrWhiteSpace(structure.Id))
@@ -558,18 +582,7 @@ namespace USZ_ARTEMIS
                     MessageBoxImage.Error);
             }
 
-            if (requiresManualJawAndApertureAdjustment)
-            {
-                MessageBox.Show(
-                    "Plan copied. Automatic jaw and aperture optimization was skipped; manual adjustment is required.",
-                    "Plan Copy Complete",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
-            else
-            {
-                MessageBox.Show("Success!");
-            }
+            MessageBox.Show("Success!");
         }
 
         private void cbMachine_SelectionChanged(object sender, SelectionChangedEventArgs e)
