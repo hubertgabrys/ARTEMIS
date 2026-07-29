@@ -329,8 +329,13 @@ namespace USZ_ARTEMIS.StructureCreation
             warnings.AddRange(newWarnings);
             if (couchShiftY > 0 && couchShiftY <= maximumBodyMarginMm) // 50 is maximum for margin method, too big shift probably a bug anyhow, do to visible undelaying support structures in CT
             {
+                ReplaceCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    appliedBodyMarginMm,
+                    couchShiftY,
+                    enableOverride);
                 appliedBodyMarginMm = couchShiftY;
-                AddCouchWithBodyMargin(structureSet, couchModel, appliedBodyMarginMm, enableOverride);
             }
 
             double initialPositioningMarginMm = appliedBodyMarginMm;
@@ -345,7 +350,12 @@ namespace USZ_ARTEMIS.StructureCreation
                     break;
                 }
 
-                AddCouchWithBodyMargin(structureSet, couchModel, retryMarginMm, enableOverride);
+                ReplaceCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    appliedBodyMarginMm,
+                    retryMarginMm,
+                    enableOverride);
                 appliedBodyMarginMm = retryMarginMm;
                 couchInsideBody = DataChecker.CouchInsideBody(structureSet);
             }
@@ -368,6 +378,43 @@ namespace USZ_ARTEMIS.StructureCreation
 
 
         public static void AddCouchWithBodyMargin(StructureSet structureSet, string couchModel, double bodyMargin, bool enableOverride)
+        {
+            AddCouchWithBodyMargin(
+                structureSet,
+                couchModel,
+                bodyMargin,
+                enableOverride,
+                existingCouchRemoved: null);
+        }
+
+        private static void ReplaceCouchWithBodyMargin(
+            StructureSet structureSet,
+            string couchModel,
+            double previousBodyMargin,
+            double replacementBodyMargin,
+            bool enableOverride)
+        {
+            CouchReplacementTransaction.Execute(
+                markExistingCouchRemoved => AddCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    replacementBodyMargin,
+                    enableOverride,
+                    markExistingCouchRemoved),
+                () => AddCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    previousBodyMargin,
+                    enableOverride: true,
+                    existingCouchRemoved: null));
+        }
+
+        private static void AddCouchWithBodyMargin(
+            StructureSet structureSet,
+            string couchModel,
+            double bodyMargin,
+            bool enableOverride,
+            Action existingCouchRemoved)
         {
             string structureDicomType = "CONTROL";
             string tempBodyId = "tempBODY";
@@ -399,7 +446,22 @@ namespace USZ_ARTEMIS.StructureCreation
                 {
                     if (enableOverride)
                     {
-                        structureSet.RemoveCouchStructures(out IReadOnlyList<string> removedStructureIds, out string error);
+                        bool removed = structureSet.RemoveCouchStructures(
+                            out IReadOnlyList<string> removedStructureIds,
+                            out string error);
+                        if (removed ||
+                            (removedStructureIds != null && removedStructureIds.Count > 0))
+                        {
+                            existingCouchRemoved?.Invoke();
+                        }
+
+                        if (!removed)
+                        {
+                            throw new Exception(
+                                string.IsNullOrWhiteSpace(error)
+                                    ? "ERROR: Existing couch structures could not be removed!"
+                                    : error);
+                        }
                     }
                     else
                     {
@@ -410,26 +472,31 @@ namespace USZ_ARTEMIS.StructureCreation
                         throw new Exception("ERROR: No couch structures created!");
                     }
                 }
-                structureSet.AddCouchStructures(couchModel, orientation, railPosition, railPosition, HUvalues[0], HUvalues[1], HUvalues[2], out addedStructures, out resized, out errorMsg);
+                bool added = structureSet.AddCouchStructures(
+                    couchModel,
+                    orientation,
+                    railPosition,
+                    railPosition,
+                    HUvalues[0],
+                    HUvalues[1],
+                    HUvalues[2],
+                    out addedStructures,
+                    out resized,
+                    out errorMsg);
                 if (errorMsg != null && errorMsg.Length > 0)
                 {
                     throw new Exception(errorMsg);
                 }
-                if (addedStructures == null)
+                if (!added || addedStructures == null || addedStructures.Count == 0)
                 {
                     throw new Exception("ERROR: No couch structures created!");
                 }
-
-                // Put body volume back to normal and remove temporal body
-                realBody.SegmentVolume = tempBody;
-                structureSet.RemoveStructure(tempBody);
             }
-            catch (Exception excp)
+            finally
             {
                 // Put body volume back to normal and remove temporal body
                 realBody.SegmentVolume = tempBody;
                 structureSet.RemoveStructure(tempBody);
-                throw new Exception(excp.Message);
             }
         }
 
