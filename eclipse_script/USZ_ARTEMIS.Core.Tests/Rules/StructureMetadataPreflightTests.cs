@@ -273,17 +273,67 @@ public sealed class StructureMetadataPreflightTests
     }
 
     [Fact]
-    public void MissingInputThatIsAlsoAnOutputMustBeProducedFirst()
+    public void MissingNonTargetInputThatIsAlsoCurrentOutputIsCreatedEmpty()
     {
         var result = Evaluate(
-            references: [Snapshot("Bowel", "ORGAN")],
+            references:
+            [
+                Snapshot("Sigma", "ORGAN", "SRT", "T-59300"),
+                Snapshot("CTV1", "CTV")
+            ],
+            targets: [Snapshot("CTV1", "CTV")],
+            uses: [Use(["Sigma", "CTV1"], ["Sigma"])]);
+
+        Assert.True(result.CanApply);
+        var preparation = Assert.Single(result.Preparations);
+        Assert.Equal(
+            StructureMetadataPreparationKind.CreateEmptyInputFromReference,
+            preparation.Kind);
+        Assert.Equal("Sigma", preparation.StructureId);
+        Assert.Equal("ORGAN", preparation.ExpectedVolumeType);
+        Assert.Contains(result.Warnings, warning => warning.Contains("created empty"));
+    }
+
+    [Fact]
+    public void MissingSelfDependentSourceConsumedBeforeItsRuleIsCreatedEmpty()
+    {
+        var result = Evaluate(
+            references:
+            [
+                Snapshot("Sigma", "ORGAN", "SRT", "T-59300"),
+                Snapshot("CTV1", "CTV"),
+                Snapshot("Combined_Ph", "CONTROL")
+            ],
+            targets: [Snapshot("CTV1", "CTV")],
+            uses:
+            [
+                Use(["Sigma"], ["Combined_Ph"]),
+                Use(["Sigma", "CTV1"], ["Sigma"])
+            ]);
+
+        Assert.True(result.CanApply);
+        Assert.Equal(2, result.Preparations.Count);
+        var preparation = Assert.Single(
+            result.Preparations,
+            candidate =>
+                candidate.Kind ==
+                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
+        Assert.Equal("Sigma", preparation.StructureId);
+        Assert.Single(result.Warnings);
+    }
+
+    [Fact]
+    public void MissingSafetyCriticalInputThatIsAlsoCurrentOutputIsNotCreatedEmpty()
+    {
+        var result = Evaluate(
+            references: [Snapshot("CTV1", "CTV")],
             targets: [],
-            uses: [Use(["Bowel"], ["Bowel"])]);
+            uses: [Use(["CTV1"], ["CTV1"])]);
 
         Assert.False(result.CanApply);
         Assert.Contains(
             result.Errors,
-            error => error.Contains("not produced by an earlier rule"));
+            error => error.Contains("not created empty automatically"));
         Assert.DoesNotContain(
             result.Preparations,
             preparation =>
@@ -331,7 +381,11 @@ public sealed class StructureMetadataPreflightTests
 
         Assert.False(result.CanApply);
         Assert.Contains(result.Errors, error => error.Contains("removed before"));
-        Assert.Empty(result.Preparations);
+        Assert.DoesNotContain(
+            result.Preparations,
+            preparation =>
+                preparation.Kind ==
+                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
     }
 
     [Fact]
