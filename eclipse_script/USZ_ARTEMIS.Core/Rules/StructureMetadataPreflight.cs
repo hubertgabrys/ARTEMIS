@@ -429,21 +429,25 @@ namespace USZ_ARTEMIS.Core.Rules
         private static HashSet<string> BuildRuleGeneratedIdSet(
             IEnumerable<RuleStructureUse> ruleUses)
         {
-            var generatedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (RuleStructureUse ruleUse in
-                     ruleUses ?? Enumerable.Empty<RuleStructureUse>())
+            var uses =
+                (ruleUses ?? Enumerable.Empty<RuleStructureUse>()).ToList();
+            var sourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (RuleStructureUse ruleUse in uses)
             {
                 var inputIds = BuildIdSet(ruleUse.InputIds);
                 foreach (string outputId in ruleUse.OutputIds.Where(IsUsableId))
                 {
                     string normalizedOutputId = NormalizeId(outputId);
-                    if (!inputIds.Contains(normalizedOutputId))
+                    if (inputIds.Contains(normalizedOutputId))
                     {
-                        generatedIds.Add(normalizedOutputId);
+                        sourceIds.Add(normalizedOutputId);
                     }
                 }
             }
 
+            var generatedIds = BuildIdSet(
+                uses.SelectMany(ruleUse => ruleUse.OutputIds));
+            generatedIds.ExceptWith(sourceIds);
             return generatedIds;
         }
 

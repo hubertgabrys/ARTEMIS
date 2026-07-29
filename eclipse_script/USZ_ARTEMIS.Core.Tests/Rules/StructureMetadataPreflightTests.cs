@@ -295,6 +295,31 @@ public sealed class StructureMetadataPreflightTests
     }
 
     [Fact]
+    public void MissingSourceWithAdditionalIndependentProducerIsCreatedEmpty()
+    {
+        var result = Evaluate(
+            references:
+            [
+                Snapshot("Sigma", "ORGAN", "SRT", "T-59300"),
+                Snapshot("CTV1", "CTV")
+            ],
+            targets: [Snapshot("CTV1", "CTV")],
+            uses:
+            [
+                Use(["Sigma", "CTV1"], ["Sigma"]),
+                Use([], ["Sigma"])
+            ]);
+
+        Assert.True(result.CanApply);
+        var preparation = Assert.Single(result.Preparations);
+        Assert.Equal(
+            StructureMetadataPreparationKind.CreateEmptyInputFromReference,
+            preparation.Kind);
+        Assert.Equal("Sigma", preparation.StructureId);
+        Assert.Single(result.Warnings);
+    }
+
+    [Fact]
     public void MissingSelfDependentSourceConsumedBeforeItsRuleIsCreatedEmpty()
     {
         var result = Evaluate(
