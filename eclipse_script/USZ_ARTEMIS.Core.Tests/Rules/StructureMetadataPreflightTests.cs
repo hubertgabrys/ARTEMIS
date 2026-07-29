@@ -52,6 +52,31 @@ public sealed class StructureMetadataPreflightTests
     }
 
     [Fact]
+    public void ExistingOutputWithDifferentColorIsPreparedForSynchronization()
+    {
+        var reference = Snapshot(
+            "Bladder",
+            "ORGAN",
+            "SRT",
+            "T-74000",
+            colorArgb: 0xFF102030u);
+        var target = Snapshot(
+            "Bladder",
+            "organ",
+            "SRT",
+            "T-74000",
+            colorArgb: 0xFF405060u);
+        var result = Evaluate(
+            references: [reference],
+            targets: [target],
+            uses: [Use(["Bladder"], ["Bladder"])]);
+
+        Assert.True(result.CanApply);
+        var preparation = Assert.Single(result.Preparations);
+        Assert.Equal(StructureMetadataPreparationKind.SynchronizeExisting, preparation.Kind);
+    }
+
+    [Fact]
     public void ExistingOutputCodeIsSynchronizedWhenBaseCodeIsEmpty()
     {
         var result = Evaluate(
@@ -398,7 +423,8 @@ public sealed class StructureMetadataPreflightTests
         string? scheme = null,
         string? code = null,
         bool isApproved = false,
-        bool isEmpty = false)
+        bool isEmpty = false,
+        uint colorArgb = 0)
     {
         return new StructureMetadataSnapshot(
             id,
@@ -406,6 +432,7 @@ public sealed class StructureMetadataPreflightTests
             scheme,
             code,
             isApproved,
-            isEmpty);
+            isEmpty,
+            colorArgb);
     }
 }

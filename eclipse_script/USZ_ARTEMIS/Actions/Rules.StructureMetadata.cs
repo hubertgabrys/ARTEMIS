@@ -173,13 +173,18 @@ namespace USZ_ARTEMIS.Actions
             Structure structure)
         {
             StructureCode code = structure.StructureCode;
+            var color = structure.Color;
             return new StructureMetadataSnapshot(
                 structure.Id,
                 structure.DicomType,
                 code?.CodingScheme,
                 code?.Code,
                 structure.IsApproved,
-                structure.IsEmpty);
+                structure.IsEmpty,
+                ((uint)color.A << 24) |
+                ((uint)color.R << 16) |
+                ((uint)color.G << 8) |
+                color.B);
         }
 
         private static void PrepareRuleStructures(
@@ -258,6 +263,17 @@ namespace USZ_ARTEMIS.Actions
                         $"Structure Code synchronization failed for '{preparation.StructureId}'.");
                 }
 
+                if (!target.Color.Equals(reference.Color))
+                {
+                    target.Color = reference.Color;
+                }
+
+                if (!target.Color.Equals(reference.Color))
+                {
+                    throw new InvalidOperationException(
+                        $"Segment Color synchronization failed for '{preparation.StructureId}'.");
+                }
+
                 if (preparation.Kind ==
                         StructureMetadataPreparationKind.CreateEmptyInputFromReference &&
                     !target.IsEmpty)
@@ -321,6 +337,11 @@ namespace USZ_ARTEMIS.Actions
                 if (!StructureCodesEqual(target.StructureCode, reference.StructureCode))
                 {
                     errors.Add($"Structure Code mismatch for '{outputId}'.");
+                }
+
+                if (!target.Color.Equals(reference.Color))
+                {
+                    errors.Add($"Segment Color mismatch for '{outputId}'.");
                 }
             }
 
@@ -430,8 +451,8 @@ namespace USZ_ARTEMIS.Actions
 
             message.AppendLine();
             message.AppendLine(
-                "ARTEMIS will create them empty and copy only their Volume Type and Structure " +
-                "Code from the base plan. No contours will be copied.");
+                "ARTEMIS will create them empty and copy only their Volume Type, Structure Code, " +
+                "and Segment Color from the base plan. No contours will be copied.");
             message.AppendLine();
             message.Append("Continue with the plan copy rules?");
             return message.ToString();

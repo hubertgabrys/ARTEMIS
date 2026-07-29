@@ -12,7 +12,8 @@ namespace USZ_ARTEMIS.Core.Rules
             string structureCodeScheme,
             string structureCode,
             bool isApproved,
-            bool isEmpty)
+            bool isEmpty,
+            uint colorArgb)
         {
             Id = id;
             VolumeType = volumeType;
@@ -20,6 +21,7 @@ namespace USZ_ARTEMIS.Core.Rules
             StructureCode = structureCode;
             IsApproved = isApproved;
             IsEmpty = isEmpty;
+            ColorArgb = colorArgb;
         }
 
         public string Id { get; }
@@ -28,6 +30,7 @@ namespace USZ_ARTEMIS.Core.Rules
         public string StructureCode { get; }
         public bool IsApproved { get; }
         public bool IsEmpty { get; }
+        public uint ColorArgb { get; }
     }
 
     public sealed class RuleStructureUse
@@ -382,7 +385,8 @@ namespace USZ_ARTEMIS.Core.Rules
                     $"destination='{target.VolumeType}'. ESAPI cannot change this value in place.");
             }
 
-            if (!StructureCodesEqual(reference, target))
+            if (!StructureCodesEqual(reference, target) ||
+                reference.ColorArgb != target.ColorArgb)
             {
                 preparations.Add(
                     new StructureMetadataPreparation(
