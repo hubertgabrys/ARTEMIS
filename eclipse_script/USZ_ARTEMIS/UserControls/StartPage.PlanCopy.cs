@@ -15,6 +15,7 @@ namespace USZ_ARTEMIS
     {
         private const double PlanCopyPtvFitMarginMm = 5.0;
         private const string PlanCopyPtvFitStructureBaseId = "zPtvFit";
+        private const string PlanCopyPtvResolutionStructureBaseId = "zPtvNorm";
 
         private Course GetSelectedCourse()
         {
@@ -194,16 +195,19 @@ namespace USZ_ARTEMIS
             }
         }
 
-        private static Structure AddTemporaryPtvFitStructure(StructureSet structureSet)
+        private static Structure AddTemporaryPlanCopyStructure(
+            StructureSet structureSet,
+            string baseId,
+            string purpose)
         {
-            string candidate = PlanCopyPtvFitStructureBaseId;
+            string candidate = baseId;
             while (structureSet.Structures.Any(structure =>
                 structure.Id.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
             {
                 if (candidate.Length >= 16)
                 {
                     throw new InvalidOperationException(
-                        "Could not create a uniquely named temporary PTV fitting structure.");
+                        $"Could not create a uniquely named temporary {purpose} structure.");
                 }
 
                 candidate += "Z";
@@ -212,36 +216,86 @@ namespace USZ_ARTEMIS
             if (!structureSet.CanAddStructure("CONTROL", candidate))
             {
                 throw new InvalidOperationException(
-                    "Eclipse cannot add the temporary PTV fitting structure.");
+                    $"Eclipse cannot add the temporary {purpose} structure.");
             }
 
             return structureSet.AddStructure("CONTROL", candidate);
         }
 
-        private static void PopulatePtvFitStructure(
-            Structure fitStructure,
-            IReadOnlyList<Structure> ptvs)
+        private static SegmentVolume UnionPtvSegmentVolumes(IReadOnlyList<Structure> ptvs)
         {
-            if (ptvs.Any(ptv => ptv.IsHighResolution))
-            {
-                if (!fitStructure.CanConvertToHighResolution())
-                {
-                    throw new InvalidOperationException(
-                        "The temporary PTV fitting structure cannot be converted to high resolution.");
-                }
-
-                fitStructure.ConvertToHighResolution();
-                if (!fitStructure.IsHighResolution)
-                {
-                    throw new InvalidOperationException(
-                        "The temporary PTV fitting structure did not convert to high resolution.");
-                }
-            }
-
             var union = ptvs[0].SegmentVolume;
             for (int i = 1; i < ptvs.Count; i++)
             {
                 union = union.Or(ptvs[i].SegmentVolume);
+            }
+
+            return union;
+        }
+
+        private static void ConvertTemporaryStructureToHighResolution(
+            Structure structure,
+            string purpose)
+        {
+            if (!structure.CanConvertToHighResolution())
+            {
+                throw new InvalidOperationException(
+                    $"The temporary {purpose} structure cannot be converted to high resolution.");
+            }
+
+            structure.ConvertToHighResolution();
+            if (!structure.IsHighResolution)
+            {
+                throw new InvalidOperationException(
+                    $"The temporary {purpose} structure did not convert to high resolution.");
+            }
+        }
+
+        private static void PopulatePtvFitStructure(
+            Structure fitStructure,
+            Structure resolutionStructure,
+            IReadOnlyList<Structure> ptvs)
+        {
+            var standardResolutionPtvs = ptvs
+                .Where(ptv => !ptv.IsHighResolution)
+                .ToList();
+            var highResolutionPtvs = ptvs
+                .Where(ptv => ptv.IsHighResolution)
+                .ToList();
+
+            SegmentVolume union;
+            if (highResolutionPtvs.Count == 0)
+            {
+                union = UnionPtvSegmentVolumes(standardResolutionPtvs);
+            }
+            else
+            {
+                ConvertTemporaryStructureToHighResolution(
+                    fitStructure,
+                    "PTV fitting");
+                union = UnionPtvSegmentVolumes(highResolutionPtvs);
+
+                if (standardResolutionPtvs.Count > 0)
+                {
+                    if (resolutionStructure == null)
+                    {
+                        throw new InvalidOperationException(
+                            "The temporary PTV resolution-conversion structure is missing.");
+                    }
+
+                    resolutionStructure.SegmentVolume =
+                        UnionPtvSegmentVolumes(standardResolutionPtvs);
+                    if (resolutionStructure.IsEmpty)
+                    {
+                        throw new InvalidOperationException(
+                            "The standard-resolution current PTV union is empty.");
+                    }
+
+                    ConvertTemporaryStructureToHighResolution(
+                        resolutionStructure,
+                        "PTV resolution-conversion");
+                    union = union.Or(resolutionStructure.SegmentVolume);
+                }
             }
 
             fitStructure.SegmentVolume = union.Margin(PlanCopyPtvFitMarginMm);
@@ -416,6 +470,7 @@ namespace USZ_ARTEMIS
                 .ToList();
 
             Structure fitStructure = null;
+            var temporaryFitStructures = new List<Structure>();
             string fitError = null;
             try
             {
@@ -432,8 +487,27 @@ namespace USZ_ARTEMIS
                         "No treatment beams were found in the copied plan.");
                 }
 
-                fitStructure = AddTemporaryPtvFitStructure(copiedPlan.StructureSet);
-                PopulatePtvFitStructure(fitStructure, currentPtvs);
+                fitStructure = AddTemporaryPlanCopyStructure(
+                    copiedPlan.StructureSet,
+                    PlanCopyPtvFitStructureBaseId,
+                    "PTV fitting");
+                temporaryFitStructures.Add(fitStructure);
+
+                Structure resolutionStructure = null;
+                if (currentPtvs.Any(ptv => ptv.IsHighResolution) &&
+                    currentPtvs.Any(ptv => !ptv.IsHighResolution))
+                {
+                    resolutionStructure = AddTemporaryPlanCopyStructure(
+                        copiedPlan.StructureSet,
+                        PlanCopyPtvResolutionStructureBaseId,
+                        "PTV resolution-conversion");
+                    temporaryFitStructures.Add(resolutionStructure);
+                }
+
+                PopulatePtvFitStructure(
+                    fitStructure,
+                    resolutionStructure,
+                    currentPtvs);
 
                 foreach (var beam in treatmentBeams)
                 {
@@ -455,17 +529,18 @@ namespace USZ_ARTEMIS
             }
             finally
             {
-                if (fitStructure != null)
+                for (int i = temporaryFitStructures.Count - 1; i >= 0; i--)
                 {
+                    Structure temporaryStructure = temporaryFitStructures[i];
                     try
                     {
-                        if (!copiedPlan.StructureSet.CanRemoveStructure(fitStructure))
+                        if (!copiedPlan.StructureSet.CanRemoveStructure(temporaryStructure))
                         {
                             throw new InvalidOperationException(
-                                $"Eclipse cannot remove temporary structure '{fitStructure.Id}'.");
+                                $"Eclipse cannot remove temporary structure '{temporaryStructure.Id}'.");
                         }
 
-                        copiedPlan.StructureSet.RemoveStructure(fitStructure);
+                        copiedPlan.StructureSet.RemoveStructure(temporaryStructure);
                     }
                     catch (Exception ex)
                     {
