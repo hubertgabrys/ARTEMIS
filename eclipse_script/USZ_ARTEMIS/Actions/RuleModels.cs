@@ -11,7 +11,6 @@ namespace USZ_ARTEMIS.Actions
         Subtraction,
         Addition,
         Intersection,
-        MorphologicalOpening,
         SbrtRing,
         RectalWall
     }

@@ -1164,12 +1164,6 @@ namespace USZ_ARTEMIS.Actions
                             : "?";
                         return $"{rule.OutputStructure} = {input} + asym({marginsText}) mm (X-/Y-/Z-/X+/Y+/Z+)";
                     }
-                case RuleType.MorphologicalOpening:
-                    {
-                        string input = rule.InputStructures?.FirstOrDefault() ?? "?";
-                        string marginText = rule.MarginMm.HasValue ? rule.MarginMm.Value.ToString("0.###") : "?";
-                        return $"{rule.OutputStructure} = {input} opening with {marginText}mm";
-                    }
                 case RuleType.Subtraction:
                     {
                         if (rule.InputStructures != null && rule.InputStructures.Count >= 2)
@@ -1853,15 +1847,6 @@ namespace USZ_ARTEMIS.Actions
                             InputStructures = new List<string> { ptv2Id, ptv1Id },
                             OutputStructure = ptv2Id + "-" + ptv1Id + "_Ph"
                         });
-
-                        /*// PTV2 - PTV1 clean up
-                        ruleSet.Rules.Add(new StructureRule
-                        {
-                            Type = RuleType.MorphologicalOpening,
-                            InputStructures = new List<string> { ptv2Id + "-" + ptv1Id + "_Ph" },
-                            OutputStructure = ptv2Id + "-" + ptv1Id + "_Ph_clean",
-                            MarginMm = 3.0
-                        });*/
 
                         break;
                     }
