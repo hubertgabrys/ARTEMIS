@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using USZ_ARTEMIS.Core.StructureCreation;
 using USZ_ARTEMIS.DataExtraction;
 using USZ_ARTEMIS.DataQualification;
 using VMS.TPS.Common.Model.API;
@@ -308,6 +309,10 @@ namespace USZ_ARTEMIS.StructureCreation
         // Positioning does not work perfectly, manual check needed
         public static void CreateCouchStructures(StructureSet structureSet, string couchModel, bool enableOverride, out List<string> warnings)
         {
+            const double initialBodyMarginMm = 5;
+            const double bodyMarginIncrementMm = 5;
+            const double maximumBodyMarginMm = 50;
+
             warnings = new List<string>();
             if (couchModel == null || couchModel.Length == 0)
             {
@@ -315,24 +320,101 @@ namespace USZ_ARTEMIS.StructureCreation
             }
 
             // Create couch structures
-            AddCouchWithBodyMargin(structureSet, couchModel, 5, enableOverride);
+            double appliedBodyMarginMm = initialBodyMarginMm;
+            AddCouchWithBodyMargin(structureSet, couchModel, appliedBodyMarginMm, enableOverride);
 
             // Move created couch structures to correct height
             List<string> newWarnings = new List<string>();
             var couchShiftY = ImageFeatureExtractor.FindCouchShiftY(structureSet, out newWarnings);
             warnings.AddRange(newWarnings);
-            if (couchShiftY > 0 && couchShiftY <= 50) // 50 is maximum for margin method, too big shift probably a bug anyhow, do to visible undelaying support structures in CT
+            if (couchShiftY > 0 && couchShiftY <= maximumBodyMarginMm) // 50 is maximum for margin method, too big shift probably a bug anyhow, do to visible undelaying support structures in CT
             {
-                AddCouchWithBodyMargin(structureSet, couchModel, couchShiftY, enableOverride);
+                ReplaceCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    appliedBodyMarginMm,
+                    couchShiftY,
+                    enableOverride);
+                appliedBodyMarginMm = couchShiftY;
             }
-            if (DataChecker.CouchInsideBody(structureSet))
+
+            double initialPositioningMarginMm = appliedBodyMarginMm;
+            bool couchInsideBody = DataChecker.CouchInsideBody(structureSet);
+            foreach (double retryMarginMm in CouchMarginRetrySchedule.Create(
+                appliedBodyMarginMm,
+                bodyMarginIncrementMm,
+                maximumBodyMarginMm))
             {
-                warnings.Add($"WARNING: Couch inside BODY! Check that created couch structures are correctly positioned!");
+                if (!couchInsideBody)
+                {
+                    break;
+                }
+
+                ReplaceCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    appliedBodyMarginMm,
+                    retryMarginMm,
+                    enableOverride);
+                appliedBodyMarginMm = retryMarginMm;
+                couchInsideBody = DataChecker.CouchInsideBody(structureSet);
+            }
+
+            if (couchInsideBody)
+            {
+                warnings.Add(
+                    $"WARNING: Couch still intersects BODY after automatic positioning up to the maximum " +
+                    $"BODY margin of {maximumBodyMarginMm:0} mm. Manually move the couch posteriorly (Y+) " +
+                    $"and verify its position.");
+            }
+            else if (appliedBodyMarginMm > initialPositioningMarginMm)
+            {
+                warnings.Add(
+                    $"Couch position was automatically adjusted to remove its overlap with BODY by increasing " +
+                    $"the positioning BODY margin from {initialPositioningMarginMm:0.##} mm to " +
+                    $"{appliedBodyMarginMm:0.##} mm. Verify the couch position.");
             }
         }        
 
 
         public static void AddCouchWithBodyMargin(StructureSet structureSet, string couchModel, double bodyMargin, bool enableOverride)
+        {
+            AddCouchWithBodyMargin(
+                structureSet,
+                couchModel,
+                bodyMargin,
+                enableOverride,
+                existingCouchRemoved: null);
+        }
+
+        private static void ReplaceCouchWithBodyMargin(
+            StructureSet structureSet,
+            string couchModel,
+            double previousBodyMargin,
+            double replacementBodyMargin,
+            bool enableOverride)
+        {
+            CouchReplacementTransaction.Execute(
+                markExistingCouchRemoved => AddCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    replacementBodyMargin,
+                    enableOverride,
+                    markExistingCouchRemoved),
+                () => AddCouchWithBodyMargin(
+                    structureSet,
+                    couchModel,
+                    previousBodyMargin,
+                    enableOverride: true,
+                    existingCouchRemoved: null));
+        }
+
+        private static void AddCouchWithBodyMargin(
+            StructureSet structureSet,
+            string couchModel,
+            double bodyMargin,
+            bool enableOverride,
+            Action existingCouchRemoved)
         {
             string structureDicomType = "CONTROL";
             string tempBodyId = "tempBODY";
@@ -364,7 +446,22 @@ namespace USZ_ARTEMIS.StructureCreation
                 {
                     if (enableOverride)
                     {
-                        structureSet.RemoveCouchStructures(out IReadOnlyList<string> removedStructureIds, out string error);
+                        bool removed = structureSet.RemoveCouchStructures(
+                            out IReadOnlyList<string> removedStructureIds,
+                            out string error);
+                        if (removed ||
+                            (removedStructureIds != null && removedStructureIds.Count > 0))
+                        {
+                            existingCouchRemoved?.Invoke();
+                        }
+
+                        if (!removed)
+                        {
+                            throw new Exception(
+                                string.IsNullOrWhiteSpace(error)
+                                    ? "ERROR: Existing couch structures could not be removed!"
+                                    : error);
+                        }
                     }
                     else
                     {
@@ -375,26 +472,31 @@ namespace USZ_ARTEMIS.StructureCreation
                         throw new Exception("ERROR: No couch structures created!");
                     }
                 }
-                structureSet.AddCouchStructures(couchModel, orientation, railPosition, railPosition, HUvalues[0], HUvalues[1], HUvalues[2], out addedStructures, out resized, out errorMsg);
+                bool added = structureSet.AddCouchStructures(
+                    couchModel,
+                    orientation,
+                    railPosition,
+                    railPosition,
+                    HUvalues[0],
+                    HUvalues[1],
+                    HUvalues[2],
+                    out addedStructures,
+                    out resized,
+                    out errorMsg);
                 if (errorMsg != null && errorMsg.Length > 0)
                 {
                     throw new Exception(errorMsg);
                 }
-                if (addedStructures == null)
+                if (!added || addedStructures == null || addedStructures.Count == 0)
                 {
                     throw new Exception("ERROR: No couch structures created!");
                 }
-
-                // Put body volume back to normal and remove temporal body
-                realBody.SegmentVolume = tempBody;
-                structureSet.RemoveStructure(tempBody);
             }
-            catch (Exception excp)
+            finally
             {
                 // Put body volume back to normal and remove temporal body
                 realBody.SegmentVolume = tempBody;
                 structureSet.RemoveStructure(tempBody);
-                throw new Exception(excp.Message);
             }
         }
 
