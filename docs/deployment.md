@@ -35,8 +35,7 @@ the Published Scripts folder and restart Eclipse before validation; otherwise
 the runtime may load the stale file instead of the embedded version.
 
 Copy `USZ_ARTEMIS.AppPaths.example.json` beside the deployed ESAPI assembly and
-rename it by replacing the DLL's final `.dll` extension with `.json`. For
-example, deploy `USZ_ARTEMIS_v26.7.20.2.esapi.json` beside
-`USZ_ARTEMIS_v26.7.20.2.esapi.dll`. Alternatively, set
-`USZ_ARTEMIS_APP_PATHS` to an explicit configuration path. The build copies a
-source-local `$(AssemblyName).json` beside the output DLL when it is present.
+rename it to `USZ_ARTEMIS.esapi.json`. This fixed name is independent of the
+versioned DLL filename. Alternatively, set `USZ_ARTEMIS_APP_PATHS` to an
+explicit configuration path. The build copies a source-local
+`USZ_ARTEMIS.esapi.json` beside the output DLL when it is present.

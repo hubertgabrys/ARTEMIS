@@ -35,4 +35,31 @@ namespace USZ_ARTEMIS.Actions
         public int Version { get; set; } = 1;
         public List<StructureRule> Rules { get; set; } = new List<StructureRule>();
     }
+
+    public sealed class RuleApplicationResult
+    {
+        private RuleApplicationResult(bool succeeded, bool cancelled)
+        {
+            Succeeded = succeeded;
+            Cancelled = cancelled;
+        }
+
+        public bool Succeeded { get; }
+        public bool Cancelled { get; }
+
+        public static RuleApplicationResult Success()
+        {
+            return new RuleApplicationResult(true, false);
+        }
+
+        public static RuleApplicationResult Failure()
+        {
+            return new RuleApplicationResult(false, false);
+        }
+
+        public static RuleApplicationResult Cancel()
+        {
+            return new RuleApplicationResult(false, true);
+        }
+    }
 }

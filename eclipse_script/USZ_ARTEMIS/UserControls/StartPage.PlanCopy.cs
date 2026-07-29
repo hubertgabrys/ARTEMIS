@@ -179,10 +179,14 @@ namespace USZ_ARTEMIS
         private void PopulateStructureSets()
         {
             cbStructureSets.Items.Clear();
+            StructureSet baseStructureSet = GetSelectedPlan()?.StructureSet;
 
             var filteredSS = context.Patient.StructureSets
                 .Where(ss =>
                 {
+                    if (Actions.Rules.AreSameStructureSet(ss, baseStructureSet))
+                        return false;
+
                     var img = ss.Image;
                     string imgId = img.Id;
                     if (imgId.Contains("kVCBCT") || imgId.Contains("QW") || imgId.Contains("QB"))
@@ -251,6 +255,20 @@ namespace USZ_ARTEMIS
                 return;
             }
 
+            if (Actions.Rules.AreSameStructureSet(
+                    newStructureSet,
+                    originalPlan.StructureSet))
+            {
+                MessageBox.Show(
+                    "The base plan's own structure set cannot be used as the copy destination. " +
+                    "Choose a different structure set.",
+                    "Plan Copy Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                PopulateStructureSets();
+                return;
+            }
+
             var copiedPlan = originalPlan.Course.CopyPlanSetup(originalPlan, newStructureSet, null);
 
             string fractionSuffix = cb_FractionLetter.Text;
@@ -315,7 +333,23 @@ namespace USZ_ARTEMIS
                 }
             }
 
-            Actions.Rules.ApplyRules(copiedPlan, originalPlan);
+            var ruleApplicationResult = Actions.Rules.ApplyRules(copiedPlan, originalPlan);
+            if (!ruleApplicationResult.Succeeded)
+            {
+                MessageBox.Show(
+                    ruleApplicationResult.Cancelled
+                        ? "Plan copy stopped because rule application was cancelled.\n\n" +
+                          "The incomplete copied plan remains in the current unsaved Eclipse " +
+                          "modifications. Remove it or discard the modifications before saving."
+                        : "Plan copy stopped because the rules could not be applied safely.\n\n" +
+                          "No target, aperture, or optimization-objective updates were performed " +
+                          "after the failure. Remove the incomplete copied plan or discard the " +
+                          "current Eclipse modifications before saving.",
+                    "Plan copy incomplete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
 
             var target = copiedPlan.StructureSet.Structures.FirstOrDefault(s => s.Id == copiedPlan.TargetVolumeID);
             if (target == null)

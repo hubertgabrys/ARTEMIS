@@ -168,6 +168,7 @@
     <Compile Include="Actions\RuleModels.cs" />
     <Compile Include="Actions\Rules.cs" />
     <Compile Include="Actions\Rules.Execution.cs" />
+    <Compile Include="Actions\Rules.StructureMetadata.cs" />
     <Compile Include="Configuration\AppPaths.cs" />
     <Compile Include="Tools\EvaluateClinicalGoals.cs" />
     <Compile Include="QA\MetricsCalc.cs" />
@@ -197,8 +198,8 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="Configuration\USZ_ARTEMIS.AppPaths.example.json" />
-    <None Include="Configuration\$(AssemblyName).json" Condition="Exists('Configuration\$(AssemblyName).json')">
-      <TargetPath>$(AssemblyName).json</TargetPath>
+    <None Include="Configuration\USZ_ARTEMIS.esapi.json" Condition="Exists('Configuration\USZ_ARTEMIS.esapi.json')">
+      <TargetPath>USZ_ARTEMIS.esapi.json</TargetPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="packages.config" />
