@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using USZ_ARTEMIS.Core.Rules;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 
@@ -80,6 +81,18 @@ namespace USZ_ARTEMIS.Actions
                         MessageBoxIcon.Error);
                     return RuleApplicationResult.Failure();
                 }
+
+                string missingInputConfirmation =
+                    FormatMissingInputCreationConfirmation(metadataPreparationPlan);
+                if (missingInputConfirmation != null &&
+                    MessageBox.Show(
+                        missingInputConfirmation,
+                        "Plan copy missing structures",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning) != DialogResult.Yes)
+                {
+                    return RuleApplicationResult.Cancel();
+                }
             }
 
             var skippedDueToApproval = new List<string>();
@@ -93,7 +106,7 @@ namespace USZ_ARTEMIS.Actions
 
                 if (metadataPreparationPlan != null)
                 {
-                    PrepareRuleOutputStructures(
+                    PrepareRuleStructures(
                         targetPlan.StructureSet,
                         rulesSourcePlan.StructureSet,
                         metadataPreparationPlan);
@@ -123,15 +136,6 @@ namespace USZ_ARTEMIS.Actions
                                 string inId = rule.InputStructures[0];
                                 string marginStr = (rule.MarginMm ?? 0).ToString(CultureInfo.InvariantCulture);
                                 ApplyExpansion(targetPlan, inId, marginStr, rule.OutputStructure);
-                            }
-                            break;
-
-                        case RuleType.MorphologicalOpening:
-                            if (rule.InputStructures.Count >= 1 && !string.IsNullOrEmpty(rule.OutputStructure))
-                            {
-                                string inId = rule.InputStructures[0];
-                                string marginStr = (rule.MarginMm ?? 0).ToString(CultureInfo.InvariantCulture);
-                                ApplyMorphologicalOpening(targetPlan, inId, marginStr, rule.OutputStructure);
                             }
                             break;
 
@@ -294,19 +298,19 @@ namespace USZ_ARTEMIS.Actions
 
         public static void ApplyExpansion(PlanSetup SelectedPlan, string structureIn1Id, string margin_mm, string structureOutId)
         {
+            Structure structureIn1 = FindRequiredInputStructure(SelectedPlan, structureIn1Id);
+            RejectEmptySafetyCriticalMarginInput(structureIn1);
             Structure structureOut = FindStructureFromId(SelectedPlan, structureOutId, warnIfMissing: false, warnIfNotEmpty: false);
-            structureOut = EnsureHighResolution(structureOut);
+            if (structureIn1.IsEmpty)
+            {
+                ClearRuleOutput(SelectedPlan, structureOut);
+                return;
+            }
 
-            Structure structureIn1 = FindStructureFromId(SelectedPlan, structureIn1Id, warnIfMissing: true, warnIfNotEmpty: true);
+            structureOut = EnsureHighResolution(structureOut);
             structureIn1 = EnsureHighResolution(structureIn1);
 
             structureOut.SegmentVolume = structureIn1.SegmentVolume.Margin(Convert.ToDouble(margin_mm));
-        }
-
-        public static void ApplyMorphologicalOpening(PlanSetup SelectedPlan, string structureIn1Id, string margin_mm, string structureOutId)
-        {
-            ApplyExpansion(SelectedPlan, structureIn1Id, "-" + margin_mm, structureOutId);
-            ApplyExpansion(SelectedPlan, structureOutId, margin_mm, structureOutId);
         }
 
         public static void ApplyAsymmetricExpansion(PlanSetup SelectedPlan, string structureInId, string structureOutId, double[] marginsMm)
@@ -317,10 +321,16 @@ namespace USZ_ARTEMIS.Actions
                 return;
             }
 
+            Structure structureIn = FindRequiredInputStructure(SelectedPlan, structureInId);
+            RejectEmptySafetyCriticalMarginInput(structureIn);
             Structure structureOut = FindStructureFromId(SelectedPlan, structureOutId);
-            structureOut = EnsureHighResolution(structureOut);
+            if (structureIn.IsEmpty)
+            {
+                ClearRuleOutput(SelectedPlan, structureOut);
+                return;
+            }
 
-            Structure structureIn = FindStructureFromId(SelectedPlan, structureInId);
+            structureOut = EnsureHighResolution(structureOut);
             structureIn = EnsureHighResolution(structureIn);
 
             var margins = new AxisAlignedMargins(
@@ -337,20 +347,32 @@ namespace USZ_ARTEMIS.Actions
             if (structureInIds == null || structureInIds.Count == 0) return;
 
             bool outputIsAlsoInput = structureInIds.Any(id => id.Equals(structureOutId, StringComparison.OrdinalIgnoreCase));
-
+            var inputStructures = structureInIds
+                .Select(id => FindRequiredInputStructure(SelectedPlan, id))
+                .ToList();
+            Structure baseStr = inputStructures[0];
             Structure structureOut = FindStructureFromId(
                 SelectedPlan, structureOutId,
                 warnIfMissing: outputIsAlsoInput,
                 warnIfNotEmpty: false);
-            structureOut = EnsureHighResolution(structureOut);
+            if (baseStr.IsEmpty)
+            {
+                ClearRuleOutput(SelectedPlan, structureOut);
+                return;
+            }
 
-            Structure baseStr = FindStructureFromId(SelectedPlan, structureInIds[0], warnIfMissing: true, warnIfNotEmpty: true);
+            structureOut = EnsureHighResolution(structureOut);
             baseStr = EnsureHighResolution(baseStr);
 
             var combinedVolume = baseStr.SegmentVolume;
-            for (int i = 1; i < structureInIds.Count; i++)
+            for (int i = 1; i < inputStructures.Count; i++)
             {
-                Structure s = FindStructureFromId(SelectedPlan, structureInIds[i], warnIfMissing: true, warnIfNotEmpty: true);
+                Structure s = inputStructures[i];
+                if (s.IsEmpty)
+                {
+                    continue;
+                }
+
                 s = EnsureHighResolution(s);
                 combinedVolume = combinedVolume.Sub(s);
             }
@@ -362,18 +384,24 @@ namespace USZ_ARTEMIS.Actions
         {
             if (structureInIds == null || structureInIds.Count == 0) return;
 
+            var nonEmptyInputs = structureInIds
+                .Select(id => FindRequiredInputStructure(SelectedPlan, id))
+                .Where(structure => !structure.IsEmpty)
+                .ToList();
             Structure structureOut = FindStructureFromId(SelectedPlan, structureOutId);
-            structureOut = EnsureHighResolution(structureOut);
-
-            Structure first = FindStructureFromId(SelectedPlan, structureInIds[0]);
-            first = EnsureHighResolution(first);
-
-            var combinedVolume = first.SegmentVolume;
-            for (int i = 1; i < structureInIds.Count; i++)
+            if (nonEmptyInputs.Count == 0)
             {
-                Structure s = FindStructureFromId(SelectedPlan, structureInIds[i]);
-                s = EnsureHighResolution(s);
-                combinedVolume = combinedVolume.Or(s);
+                ClearRuleOutput(SelectedPlan, structureOut);
+                return;
+            }
+
+            structureOut = EnsureHighResolution(structureOut);
+            Structure first = EnsureHighResolution(nonEmptyInputs[0]);
+            var combinedVolume = first.SegmentVolume;
+            for (int i = 1; i < nonEmptyInputs.Count; i++)
+            {
+                Structure structure = EnsureHighResolution(nonEmptyInputs[i]);
+                combinedVolume = combinedVolume.Or(structure);
             }
 
             structureOut.SegmentVolume = combinedVolume;
@@ -383,18 +411,23 @@ namespace USZ_ARTEMIS.Actions
         {
             if (structureInIds == null || structureInIds.Count == 0) return;
 
+            var inputStructures = structureInIds
+                .Select(id => FindRequiredInputStructure(SelectedPlan, id))
+                .ToList();
             Structure structureOut = FindStructureFromId(SelectedPlan, structureOutId);
-            structureOut = EnsureHighResolution(structureOut);
-
-            Structure first = FindStructureFromId(SelectedPlan, structureInIds[0]);
-            first = EnsureHighResolution(first);
-
-            var combinedVolume = first.SegmentVolume;
-            for (int i = 1; i < structureInIds.Count; i++)
+            if (inputStructures.Any(structure => structure.IsEmpty))
             {
-                Structure s = FindStructureFromId(SelectedPlan, structureInIds[i]);
-                s = EnsureHighResolution(s);
-                combinedVolume = combinedVolume.And(s);
+                ClearRuleOutput(SelectedPlan, structureOut);
+                return;
+            }
+
+            structureOut = EnsureHighResolution(structureOut);
+            Structure first = EnsureHighResolution(inputStructures[0]);
+            var combinedVolume = first.SegmentVolume;
+            for (int i = 1; i < inputStructures.Count; i++)
+            {
+                Structure structure = EnsureHighResolution(inputStructures[i]);
+                combinedVolume = combinedVolume.And(structure);
             }
 
             structureOut.SegmentVolume = combinedVolume;
@@ -402,19 +435,40 @@ namespace USZ_ARTEMIS.Actions
 
         public static void ApplySbrtRing(PlanSetup SelectedPlan, string structureIn1Id, string structureIn2Id)
         {
-            Structure ptv = FindStructureFromId(SelectedPlan, structureIn1Id);
-            Structure itv = FindStructureFromId(SelectedPlan, structureIn2Id);
+            Structure ptv = FindRequiredInputStructure(SelectedPlan, structureIn1Id);
+            Structure itv = FindRequiredInputStructure(SelectedPlan, structureIn2Id);
+            RejectEmptySafetyCriticalMarginInput(itv);
             Structure ptv_ph = FindStructureFromId(SelectedPlan, structureIn1Id + "_Ph");
-            ptv_ph.SegmentVolume = ptv.SegmentVolume.Sub(itv.SegmentVolume.Margin(1));
+            if (ptv.IsEmpty)
+            {
+                ClearRuleOutput(SelectedPlan, ptv_ph);
+            }
+            else if (itv.IsEmpty)
+            {
+                ptv_ph.SegmentVolume = ptv.SegmentVolume;
+            }
+            else
+            {
+                ptv_ph.SegmentVolume = ptv.SegmentVolume.Sub(itv.SegmentVolume.Margin(1));
+            }
         }
 
         public static void ApplyRectalWall(PlanSetup SelectedPlan)
         {
-            Structure body = FindStructureFromId(SelectedPlan, "BODY");
+            Structure body = FindRequiredInputStructure(SelectedPlan, "BODY");
+            Structure rectum = FindRequiredInputStructure(SelectedPlan, "Rectum");
+            RejectEmptySafetyCriticalMarginInput(body);
             Structure bodyHR_Ph = FindStructureFromId(SelectedPlan, "BodyHR_Ph");
-            Structure rectum = FindStructureFromId(SelectedPlan, "Rectum");
             Structure rectalWall = FindStructureFromId(SelectedPlan, "RectalWall_Ph");
             Structure rectalWallHelp = FindStructureFromId(SelectedPlan, "RectalWallHelp_Ph");
+
+            if (rectum.IsEmpty)
+            {
+                ClearRuleOutput(SelectedPlan, rectalWall);
+                SelectedPlan.StructureSet.RemoveStructure(bodyHR_Ph);
+                SelectedPlan.StructureSet.RemoveStructure(rectalWallHelp);
+                return;
+            }
 
             rectum = EnsureHighResolution(rectum);
             bodyHR_Ph.SegmentVolume = body.SegmentVolume;
@@ -433,6 +487,79 @@ namespace USZ_ARTEMIS.Actions
 
             SelectedPlan.StructureSet.RemoveStructure(bodyHR_Ph);
             SelectedPlan.StructureSet.RemoveStructure(rectalWallHelp);
+        }
+
+        private static Structure FindRequiredInputStructure(
+            PlanSetup selectedPlan,
+            string structureId)
+        {
+            Structure structure = FindExistingStructure(
+                selectedPlan.StructureSet,
+                structureId);
+            if (structure == null)
+            {
+                throw new InvalidOperationException(
+                    $"Required input structure '{structureId}' is missing. Input structures " +
+                    "cannot be created without matching base-plan metadata.");
+            }
+
+            return structure;
+        }
+
+        private static void RejectEmptySafetyCriticalMarginInput(
+            Structure structure)
+        {
+            if (structure.IsEmpty &&
+                StructureMetadataPreflight.IsSafetyCriticalMarginInputType(
+                    structure.DicomType))
+            {
+                throw new InvalidOperationException(
+                    $"Required margin input structure '{structure.Id}' is empty. A " +
+                    $"{structure.DicomType} structure used for margin generation must contain " +
+                    "geometry.");
+            }
+        }
+
+        private static void ClearRuleOutput(
+            PlanSetup selectedPlan,
+            Structure structure)
+        {
+            if (structure == null)
+            {
+                throw new InvalidOperationException(
+                    "A rule output structure was not available for clearing.");
+            }
+
+            if (structure.IsEmpty)
+            {
+                return;
+            }
+
+            if (!structure.CanEditSegmentVolume(out string editError))
+            {
+                throw new InvalidOperationException(
+                    $"Rule output structure '{structure.Id}' must become empty but cannot be " +
+                    $"edited: {editError}");
+            }
+
+            Image image = selectedPlan.StructureSet.Image;
+            if (image == null)
+            {
+                throw new InvalidOperationException(
+                    $"Rule output structure '{structure.Id}' cannot be cleared because its " +
+                    "structure set has no image.");
+            }
+
+            for (int imagePlane = 0; imagePlane < image.ZSize; imagePlane++)
+            {
+                structure.ClearAllContoursOnImagePlane(imagePlane);
+            }
+
+            if (!structure.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    $"Rule output structure '{structure.Id}' could not be cleared completely.");
+            }
         }
 
         public static Structure FindStructureFromId(PlanSetup SelectedPlan, string structureID, bool warnIfMissing, bool warnIfNotEmpty)

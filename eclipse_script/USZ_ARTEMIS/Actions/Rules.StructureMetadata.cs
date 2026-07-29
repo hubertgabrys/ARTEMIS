@@ -76,7 +76,51 @@ namespace USZ_ARTEMIS.Actions
                 }
             }
 
+            foreach (StructureMetadataPreparation preparation in
+                     preflight.Preparations.Where(IsCreationPreparation))
+            {
+                Structure existing = FindExistingStructure(
+                    targetPlan.StructureSet,
+                    preparation.StructureId);
+                bool existingWillBeRemoved =
+                    existing != null &&
+                    structuresToRemove.Any(
+                        structure =>
+                            ReferenceEquals(structure, existing) ||
+                            structure.Id.Trim().Equals(
+                                existing.Id.Trim(),
+                                StringComparison.OrdinalIgnoreCase));
+
+                if (existing == null &&
+                    !targetPlan.StructureSet.CanAddStructure(
+                        preparation.ExpectedVolumeType,
+                        preparation.StructureId))
+                {
+                    additionalErrors.Add(
+                        $"ESAPI reports that destination structure '{preparation.StructureId}' " +
+                        $"cannot be created with Volume Type " +
+                        $"'{preparation.ExpectedVolumeType}'.");
+                }
+                else if (existing != null && !existingWillBeRemoved)
+                {
+                    additionalErrors.Add(
+                        $"Destination structure '{existing.Id}' unexpectedly exists even though " +
+                        "metadata preflight marked it for creation.");
+                }
+            }
+
             return new RuleMetadataPreparationPlan(preflight, additionalErrors);
+        }
+
+        private static bool IsCreationPreparation(
+            StructureMetadataPreparation preparation)
+        {
+            return preparation.Kind ==
+                       StructureMetadataPreparationKind.CreateFromReference ||
+                   preparation.Kind ==
+                       StructureMetadataPreparationKind.CreateEmptyInputFromReference ||
+                   preparation.Kind ==
+                       StructureMetadataPreparationKind.CreateTemporary;
         }
 
         private static IEnumerable<RuleStructureUse> BuildOrderedRuleUses(
@@ -87,11 +131,24 @@ namespace USZ_ARTEMIS.Actions
                 var inputs = new List<string>(
                     rule.InputStructures ?? new List<string>());
                 var outputs = new List<string>();
+                var geometryRequiredInputs = new List<string>();
+
+                if ((rule.Type == RuleType.Expansion ||
+                     rule.Type == RuleType.AsymmetricExpansion) &&
+                    inputs.Count > 0)
+                {
+                    geometryRequiredInputs.Add(inputs[0]);
+                }
+                else if (rule.Type == RuleType.SbrtRing && inputs.Count == 2)
+                {
+                    geometryRequiredInputs.Add(inputs[1]);
+                }
 
                 if (rule.Type == RuleType.RectalWall)
                 {
                     inputs.Add("BODY");
                     inputs.Add("Rectum");
+                    geometryRequiredInputs.Add("BODY");
                     outputs.Add("BodyHR_Ph");
                     outputs.Add("RectalWallHelp_Ph");
                     outputs.Add("RectalWall_Ph");
@@ -105,7 +162,10 @@ namespace USZ_ARTEMIS.Actions
                     outputs.Add(rule.OutputStructure);
                 }
 
-                yield return new RuleStructureUse(inputs, outputs);
+                yield return new RuleStructureUse(
+                    inputs,
+                    outputs,
+                    geometryRequiredInputs);
             }
         }
 
@@ -113,15 +173,21 @@ namespace USZ_ARTEMIS.Actions
             Structure structure)
         {
             StructureCode code = structure.StructureCode;
+            var color = structure.Color;
             return new StructureMetadataSnapshot(
                 structure.Id,
                 structure.DicomType,
                 code?.CodingScheme,
                 code?.Code,
-                structure.IsApproved);
+                structure.IsApproved,
+                structure.IsEmpty,
+                ((uint)color.A << 24) |
+                ((uint)color.R << 16) |
+                ((uint)color.G << 8) |
+                color.B);
         }
 
-        private static void PrepareRuleOutputStructures(
+        private static void PrepareRuleStructures(
             StructureSet targetStructureSet,
             StructureSet referenceStructureSet,
             RuleMetadataPreparationPlan preparationPlan)
@@ -139,10 +205,7 @@ namespace USZ_ARTEMIS.Actions
                     targetStructureSet,
                     preparation.StructureId);
 
-                if (preparation.Kind ==
-                    StructureMetadataPreparationKind.CreateFromReference ||
-                    preparation.Kind ==
-                    StructureMetadataPreparationKind.CreateTemporary)
+                if (IsCreationPreparation(preparation))
                 {
                     if (target != null)
                     {
@@ -199,6 +262,26 @@ namespace USZ_ARTEMIS.Actions
                     throw new InvalidOperationException(
                         $"Structure Code synchronization failed for '{preparation.StructureId}'.");
                 }
+
+                if (!target.Color.Equals(reference.Color))
+                {
+                    target.Color = reference.Color;
+                }
+
+                if (!target.Color.Equals(reference.Color))
+                {
+                    throw new InvalidOperationException(
+                        $"Segment Color synchronization failed for '{preparation.StructureId}'.");
+                }
+
+                if (preparation.Kind ==
+                        StructureMetadataPreparationKind.CreateEmptyInputFromReference &&
+                    !target.IsEmpty)
+                {
+                    throw new InvalidOperationException(
+                        $"Destination input structure '{preparation.StructureId}' was created " +
+                        "with unexpected geometry. No base-plan contours were requested.");
+                }
             }
         }
 
@@ -254,6 +337,11 @@ namespace USZ_ARTEMIS.Actions
                 if (!StructureCodesEqual(target.StructureCode, reference.StructureCode))
                 {
                     errors.Add($"Structure Code mismatch for '{outputId}'.");
+                }
+
+                if (!target.Color.Equals(reference.Color))
+                {
+                    errors.Add($"Segment Color mismatch for '{outputId}'.");
                 }
             }
 
@@ -332,6 +420,41 @@ namespace USZ_ARTEMIS.Actions
             message.Append(
                 "No rules were applied. Correct the destination structure set or the base-plan " +
                 "rules before trying the plan copy again.");
+            return message.ToString();
+        }
+
+        private static string FormatMissingInputCreationConfirmation(
+            RuleMetadataPreparationPlan plan)
+        {
+            var missingInputs = plan.Preflight.Preparations
+                .Where(
+                    preparation =>
+                        preparation.Kind ==
+                        StructureMetadataPreparationKind.CreateEmptyInputFromReference)
+                .ToList();
+            if (missingInputs.Count == 0)
+            {
+                return null;
+            }
+
+            var message = new StringBuilder();
+            message.AppendLine(
+                "The following required structures are missing from the destination structure set:");
+            message.AppendLine();
+
+            foreach (StructureMetadataPreparation preparation in missingInputs)
+            {
+                message.AppendLine(
+                    $"- {preparation.StructureId} " +
+                    $"(Volume Type: {preparation.ExpectedVolumeType})");
+            }
+
+            message.AppendLine();
+            message.AppendLine(
+                "ARTEMIS will create them empty and copy only their Volume Type, Structure Code, " +
+                "and Segment Color from the base plan. No contours will be copied.");
+            message.AppendLine();
+            message.Append("Continue with the plan copy rules?");
             return message.ToString();
         }
     }
