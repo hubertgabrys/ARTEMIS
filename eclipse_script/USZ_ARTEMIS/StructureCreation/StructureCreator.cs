@@ -338,7 +338,6 @@ namespace USZ_ARTEMIS.StructureCreation
                 appliedBodyMarginMm = couchShiftY;
             }
 
-            double initialPositioningMarginMm = appliedBodyMarginMm;
             bool couchInsideBody = DataChecker.CouchInsideBody(structureSet);
             foreach (double retryMarginMm in CouchMarginRetrySchedule.Create(
                 appliedBodyMarginMm,
@@ -366,13 +365,6 @@ namespace USZ_ARTEMIS.StructureCreation
                     $"WARNING: Couch still intersects BODY after automatic positioning up to the maximum " +
                     $"BODY margin of {maximumBodyMarginMm:0} mm. Manually move the couch posteriorly (Y+) " +
                     $"and verify its position.");
-            }
-            else if (appliedBodyMarginMm > initialPositioningMarginMm)
-            {
-                warnings.Add(
-                    $"Couch position was automatically adjusted to remove its overlap with BODY by increasing " +
-                    $"the positioning BODY margin from {initialPositioningMarginMm:0.##} mm to " +
-                    $"{appliedBodyMarginMm:0.##} mm. Verify the couch position.");
             }
         }        
 

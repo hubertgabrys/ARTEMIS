@@ -359,11 +359,7 @@ public sealed class StructureMetadataPreflightTests
         Assert.Contains(
             result.Errors,
             error => error.Contains("not created empty automatically"));
-        Assert.DoesNotContain(
-            result.Preparations,
-            preparation =>
-                preparation.Kind ==
-                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
+        Assert.Empty(result.Preparations);
     }
 
     [Theory]
@@ -433,11 +429,7 @@ public sealed class StructureMetadataPreflightTests
         Assert.Contains(
             result.Errors,
             error => error.Contains("not produced by an earlier rule"));
-        Assert.DoesNotContain(
-            result.Preparations,
-            preparation =>
-                preparation.Kind ==
-                StructureMetadataPreparationKind.CreateEmptyInputFromReference);
+        Assert.Empty(result.Preparations);
     }
 
     [Fact]

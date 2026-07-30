@@ -83,9 +83,11 @@ namespace USZ_ARTEMIS.Core.Rules
             IList<string> errors,
             IList<string> warnings)
         {
-            Preparations = new List<StructureMetadataPreparation>(preparations);
             Errors = new List<string>(errors);
             Warnings = new List<string>(warnings);
+            Preparations = Errors.Count == 0
+                ? new List<StructureMetadataPreparation>(preparations)
+                : new List<StructureMetadataPreparation>();
         }
 
         public IReadOnlyList<StructureMetadataPreparation> Preparations { get; }
