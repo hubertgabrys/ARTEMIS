@@ -27,6 +27,9 @@ namespace USZ_ARTEMIS
             @"^PTV(?<mid>.*)\+2cm_Ph$",
             RegexOptions.Compiled);
 
+        // Temporarily disabled; set to true to restore clinical-goal and mean-dose filtering.
+        private static readonly bool FilterCopiedOptimizationObjectives = false;
+
         private Course GetSelectedCourse()
         {
             return context.Course;
@@ -485,8 +488,10 @@ namespace USZ_ARTEMIS
                 // MessageBox.Show($"Copied BODY structure code updated to: {copiedBody.StructureCode}");
             }
 
-            var objectiveFilter = new PlanCopyObjectiveFilter(
-                originalPlan.GetClinicalGoals().Select(goal => goal.StructureId));
+            var objectiveFilter = FilterCopiedOptimizationObjectives
+                ? new PlanCopyObjectiveFilter(
+                    originalPlan.GetClinicalGoals().Select(goal => goal.StructureId))
+                : null;
 
             foreach (var objective in originalPlan.OptimizationSetup.Objectives)
             {
@@ -502,7 +507,7 @@ namespace USZ_ARTEMIS
                 }
 
                 var structureKey = originalStructure.Id.Trim();
-                if (!objectiveFilter.ShouldCopy(
+                if (objectiveFilter != null && !objectiveFilter.ShouldCopy(
                     structureKey,
                     objective is OptimizationMeanDoseObjective))
                 {
