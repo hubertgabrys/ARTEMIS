@@ -118,8 +118,7 @@ namespace USZ_ARTEMIS.Core.Rules
 
             var ruleUses =
                 (orderedRuleUses ?? Enumerable.Empty<RuleStructureUse>()).ToList();
-            var generatedIds = BuildIdSet(
-                ruleUses.SelectMany(ruleUse => ruleUse.OutputIds));
+            var generatedIds = BuildRuleGeneratedIdSet(ruleUses);
             var producedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             int ruleNumber = 0;
@@ -425,6 +424,31 @@ namespace USZ_ARTEMIS.Core.Rules
             }
 
             return lookup;
+        }
+
+        private static HashSet<string> BuildRuleGeneratedIdSet(
+            IEnumerable<RuleStructureUse> ruleUses)
+        {
+            var uses =
+                (ruleUses ?? Enumerable.Empty<RuleStructureUse>()).ToList();
+            var sourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (RuleStructureUse ruleUse in uses)
+            {
+                var inputIds = BuildIdSet(ruleUse.InputIds);
+                foreach (string outputId in ruleUse.OutputIds.Where(IsUsableId))
+                {
+                    string normalizedOutputId = NormalizeId(outputId);
+                    if (inputIds.Contains(normalizedOutputId))
+                    {
+                        sourceIds.Add(normalizedOutputId);
+                    }
+                }
+            }
+
+            var generatedIds = BuildIdSet(
+                uses.SelectMany(ruleUse => ruleUse.OutputIds));
+            generatedIds.ExceptWith(sourceIds);
+            return generatedIds;
         }
 
         private static HashSet<string> BuildIdSet(IEnumerable<string> ids)
