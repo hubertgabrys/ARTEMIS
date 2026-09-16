@@ -54,14 +54,24 @@ def _crop_coverage_warning_message(crop_result: dict) -> str | None:
     warning_code = crop_result.get("warning_code")
     roi_name = crop_result.get("roi_name") or "the +2cm_Ph structure"
     if warning_code == "insufficient_longitudinal_coverage":
-        caudal = float(crop_result.get("caudal_missing_mm") or 0.0)
-        cranial = float(crop_result.get("cranial_missing_mm") or 0.0)
+        coverage_lines = []
+        for direction, key in (("Caudal", "caudal"), ("Cranial", "cranial")):
+            missing = float(crop_result.get(f"{key}_missing_mm") or 0.0)
+            available = float(crop_result.get(f"{key}_available_mm") or 0.0)
+            if missing > 0:
+                coverage_lines.append(
+                    f"{direction}: {missing:.1f} mm additional coverage required"
+                )
+            else:
+                coverage_lines.append(
+                    f"{direction}: {available:.1f} mm available margin"
+                )
+        coverage_summary = "\n".join(coverage_lines)
         return (
             f"The structure '{roi_name}' does not fully fit within the acquired "
             "image series.\n\n"
-            "Additional longitudinal coverage required:\n"
-            f"- Caudally: {caudal:.1f} mm\n"
-            f"- Cranially: {cranial:.1f} mm\n\n"
+            "Longitudinal coverage of the +2 cm ring:\n"
+            f"{coverage_summary}\n\n"
             "Acquiring a new image with a larger longitudinal field of view is "
             "recommended.\n\n"
             "The structures were copied successfully. The image series was not "
