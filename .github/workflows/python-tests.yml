@@ -3,11 +3,11 @@ name: Python tests
 on:
   push:
     paths:
-      - "preprocessing/**"
+      - "preprocessing_script/**"
       - ".github/workflows/python-tests.yml"
   pull_request:
     paths:
-      - "preprocessing/**"
+      - "preprocessing_script/**"
       - ".github/workflows/python-tests.yml"
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: preprocessing
+        working-directory: preprocessing_script
 
     steps:
       - uses: actions/checkout@v4

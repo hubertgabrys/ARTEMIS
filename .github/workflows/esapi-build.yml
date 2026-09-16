@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "eclipse_script/**"
+      - "esapi_script/**"
       - ".github/workflows/esapi-build.yml"
   pull_request:
     paths:
-      - "eclipse_script/**"
+      - "esapi_script/**"
       - ".github/workflows/esapi-build.yml"
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
           ESAPI_ASSEMBLIES_URL: ${{ vars.ESAPI_ASSEMBLIES_URL }}
           ESAPI_ASSEMBLIES_TOKEN: ${{ secrets.ESAPI_ASSEMBLIES_TOKEN }}
         run: |
-          $target = "eclipse_script/ESAPI 18.1"
+          $target = "esapi_script/ESAPI 18.1"
           New-Item -ItemType Directory -Force -Path $target | Out-Null
           $archive = Join-Path $env:RUNNER_TEMP "esapi-assemblies.zip"
           Invoke-WebRequest `
@@ -51,7 +51,7 @@ jobs:
           Expand-Archive -Force -Path $archive -DestinationPath $target
 
       - name: Restore NuGet packages
-        run: nuget restore eclipse_script/USZ_ARTEMIS.sln -PackagesDirectory eclipse_script/packages
+        run: nuget restore esapi_script/USZ_ARTEMIS.sln -PackagesDirectory esapi_script/packages
 
       - name: Build ESAPI solution
-        run: msbuild eclipse_script/USZ_ARTEMIS.sln /p:Configuration=Release /p:Platform=x64 /m
+        run: msbuild esapi_script/USZ_ARTEMIS.sln /p:Configuration=Release /p:Platform=x64 /m

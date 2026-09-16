@@ -15,7 +15,7 @@ Python GUI and preprocessing pipeline for the ARTEMIS workflow.
 ## Local Setup
 
 ```bash
-cd preprocessing
+cd preprocessing_script
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -c constraints-dev.txt -e '.[dev]'
@@ -40,7 +40,7 @@ The Eclipse launcher passes those values when the executable is started from Ecl
 ## Build Executable
 
 ```bash
-cd preprocessing
+cd preprocessing_script
 python packaging/pyinstaller/generate_exe.py
 ```
 

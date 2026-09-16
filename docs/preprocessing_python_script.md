@@ -5,7 +5,7 @@
 Build the executable on Windows:
 
 ```bash
-cd preprocessing
+cd preprocessing_script
 python packaging/pyinstaller/generate_exe.py
 ```
 
@@ -14,14 +14,14 @@ Set `REGISTRATION_LOG_FILE` in `.env` if registration results should be written 
 
 ## Eclipse Launcher
 
-Copy `preprocessing/eclipse_launcher/USZ_ARTEMIS_Preprocessing.cs` manually to the Varian Published Scripts folder.
+Copy `preprocessing_script/eclipse_launcher/USZ_ARTEMIS_Preprocessing.cs` manually to the Varian Published Scripts folder.
 Copy `USZ_ARTEMIS_Preprocessing.example.config` to `USZ_ARTEMIS_Preprocessing.local.config`
 beside the deployed launcher script and set the executable path and working directory there.
 
 ## Full ESAPI Project
 
 The production target is Varian ESAPI 18.1. Build
-`eclipse_script/USZ_ARTEMIS.sln` against the ESAPI 18.1 assemblies in Visual
+`esapi_script/USZ_ARTEMIS.sln` against the ESAPI 18.1 assemblies in Visual
 Studio on the licensed Windows workstation.
 
 Deploy the generated ESAPI plugin to the Varian Published Scripts folder.

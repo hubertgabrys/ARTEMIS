@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "preprocessing/**"
+      - "preprocessing_script/**"
       - ".github/workflows/python-exe-build.yml"
   pull_request:
     paths:
-      - "preprocessing/**"
+      - "preprocessing_script/**"
       - ".github/workflows/python-exe-build.yml"
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: preprocessing
+        working-directory: preprocessing_script
 
     steps:
       - uses: actions/checkout@v4
@@ -37,5 +37,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: artemis-preprocessing-executable
-          path: preprocessing/dist/artemis_preprocessing.exe
+          path: preprocessing_script/dist/artemis_preprocessing.exe
           if-no-files-found: error

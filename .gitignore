@@ -11,8 +11,8 @@ build/
 
 # PyInstaller
 *.spec.bak
-preprocessing/packaging/pyinstaller/build/
-preprocessing/packaging/pyinstaller/dist/
+preprocessing_script/packaging/pyinstaller/build/
+preprocessing_script/packaging/pyinstaller/dist/
 
 # Visual Studio / .NET
 .vs/
@@ -24,11 +24,11 @@ plugins/
 *.user
 *.suo
 *.csproj.user
-eclipse_script/ESAPI 18.1/
-eclipse_script/packages/
-eclipse_script/**/bin/
-eclipse_script/**/obj/
-eclipse_script/**/plugins/
+esapi_script/ESAPI 18.1/
+esapi_script/packages/
+esapi_script/**/bin/
+esapi_script/**/obj/
+esapi_script/**/plugins/
 
 # Logs and outputs
 logs/
@@ -54,7 +54,7 @@ config.json
 USZ_ARTEMIS_Preprocessing.local.config
 *.local.yaml
 *.local.json
-eclipse_script/USZ_ARTEMIS/Configuration/*.esapi.json
+esapi_script/USZ_ARTEMIS/Configuration/*.esapi.json
 *.local.config
 .env
 /reference

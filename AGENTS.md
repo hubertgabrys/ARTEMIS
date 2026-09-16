@@ -6,16 +6,16 @@ These instructions apply to the whole repository. ARTEMIS is clinical software: 
 
 The repository contains two independent products:
 
-- `preprocessing/`: Python 3.12 preprocessing pipeline, GUI, DICOM networking, and PyInstaller packaging.
-- `eclipse_script/`: C#/.NET Eclipse Scripting API (ESAPI) project.
+- `preprocessing_script/`: Python 3.12 preprocessing pipeline, GUI, DICOM networking, and PyInstaller packaging.
+- `esapi_script/`: C#/.NET Eclipse Scripting API (ESAPI) project.
 
-Do not create dependencies between these products. The C# launcher in `preprocessing/eclipse_launcher/` is a standalone, manually deployed bridge to the Python executable; it is not part of `eclipse_script/` and must not gain a project file.
+Do not create dependencies between these products. The C# launcher in `preprocessing_script/eclipse_launcher/` is a standalone, manually deployed bridge to the Python executable; it is not part of `esapi_script/` and must not gain a project file.
 
 ## Read Before Changing Behavior
 
 - Start with `README.md` and the README in the subproject being changed.
 - Read `docs/data_protection.md` before working with configuration, logging, fixtures, or DICOM data.
-- Read `docs/workflow.md` and `docs/deployment.md` before changing entry points, paths, packaging, or launcher behavior.
+- Read `docs/workflow.md` and `docs/preprocessing_python_script.md` before changing entry points, paths, packaging, or launcher behavior.
 - Inspect nearby tests before changing clinical or DICOM behavior. Existing behavior encoded by regression tests is intentional unless the task says otherwise.
 
 ## Data Protection and Configuration
@@ -23,12 +23,12 @@ Do not create dependencies between these products. The C# launcher in `preproces
 - Never commit real clinical data, patient identifiers, DICOM files, credentials, server details, logs, or generated clinical outputs.
 - Use only synthetic, programmatically generated DICOM datasets in tests. Do not connect tests to ARIA, Eclipse, or any clinical endpoint.
 - Keep `.env`, `AppPaths.local.json`, `USZ_ARTEMIS_Preprocessing.local.config`, and other local configuration untracked. Update only their example files with clearly fictitious values.
-- The Python application currently reads `.env`; `preprocessing/configs/config.example.yaml` is documentation only. Do not make YAML authoritative accidentally.
+- The Python application currently reads `.env`; `preprocessing_script/configs/config.example.yaml` is documentation only. Do not make YAML authoritative accidentally.
 - Do not edit or commit proprietary ESAPI assemblies, files under `reference/`, build outputs, packaged executables, or dependency caches.
 
 ## Python Development
 
-Work from `preprocessing/` and use the project virtual environment:
+Work from `preprocessing_script` and use the project virtual environment:
 
 ```bash
 python3.12 -m venv .venv
@@ -37,7 +37,7 @@ python -m pip install -c constraints-dev.txt -e '.[dev]'
 python -m pytest
 ```
 
-- Application code belongs under `preprocessing/src/artemis_preprocessing/`; tests belong under `preprocessing/tests/`.
+- Application code belongs under `preprocessing_script/src/artemis_preprocessing/`; tests belong under `preprocessing_script/tests/`.
 - Preserve both supported entry points: `python -m artemis_preprocessing` and the `artemis-preprocessing` console script.
 - Keep GUI orchestration separate from reusable DICOM, registration, imaging, I/O, and database logic where practical.
 - For a focused change, run the matching test module first, for example `python -m pytest tests/test_crop_series.py`, then run the full suite before handoff.
@@ -54,9 +54,9 @@ python -m pytest
 
 ## C# / ESAPI Development
 
-- The production target for `eclipse_script/` is Varian ESAPI 18.1. Compile and validate against the ESAPI 18.1 assemblies and installed Online Help on the licensed Windows workstation. Do not treat the ESAPI 17.0 reference archive as the target runtime.
-- Put ESAPI- and WPF-independent logic in `eclipse_script/USZ_ARTEMIS.Core/` and cover it in `USZ_ARTEMIS.Core.Tests/`.
-- Keep Varian, WPF, and Eclipse-dependent code in `eclipse_script/USZ_ARTEMIS/`. Do not add those references to the cross-platform core or offline test solution.
+- The production target for `esapi_script` is Varian ESAPI 18.1. Compile and validate against the ESAPI 18.1 assemblies and installed Online Help on the licensed Windows workstation. Do not treat the ESAPI 17.0 reference archive as the target runtime.
+- Put ESAPI- and WPF-independent logic in `esapi_script/USZ_ARTEMIS.Core/` and cover it in `esapi_script/USZ_ARTEMIS.Core.Tests/`.
+- Keep Varian, WPF, and Eclipse-dependent code in `esapi_script/USZ_ARTEMIS/`. Do not add those references to the cross-platform core or offline test solution.
 
 ### Core Assembly Deployment Boundary
 
@@ -86,7 +86,7 @@ rg -n 'Plan Checker|Department' reference/esapi-guide-18.1
 - Treat source links, version labels, and printed guide page references in these files as provenance. Cite the specific local reference and version when it materially informs an implementation decision.
 - Do not modify, regenerate, redistribute, or add files under `reference/` as part of normal feature work. These references inform implementation but do not replace compilation against the intended assemblies, Eclipse integration tests, commissioning, or clinical validation.
 
-- Run cross-platform tests from `eclipse_script/`:
+- Run cross-platform tests from `esapi_script`:
 
 ```bash
 dotnet test USZ_ARTEMIS.Offline.sln

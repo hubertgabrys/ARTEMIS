@@ -14,7 +14,7 @@ platform.
 | `USZ_ARTEMIS/` | This is the main Eclipse plugin. It contains the ESAPI entry point, WPF user interface, and code that communicates with Eclipse. It targets .NET Framework 4.8 and x64 and depends on the proprietary Varian ESAPI assemblies. | Put ESAPI-, Eclipse-, and WPF-dependent code here. Build and test it through `USZ_ARTEMIS.sln` on the licensed Windows workstation. |
 | `USZ_ARTEMIS.Core/` | This library holds logic that does not need ESAPI or WPF. It targets .NET Standard 2.0 so both the .NET Framework plugin and the cross-platform test project can reference it. Separating this logic makes fast offline testing possible without Eclipse. | Put reusable calculations, validation, rules, and other independently testable logic here. Do not add Varian, WPF, or other Windows-only references. The main plugin and the test project both reference this library. |
 | `USZ_ARTEMIS.Core.Tests/` | This is the xUnit regression-test project for `USZ_ARTEMIS.Core`. It targets .NET 10 and intentionally has no reference to the main plugin, ESAPI, or WPF. | Add tests here whenever portable core behavior changes. Run them with `dotnet test USZ_ARTEMIS.Offline.sln`. These tests complement, but do not replace, Windows builds and Eclipse integration testing. |
-| `USZ_ARTEMIS.Offline.sln` | This solution contains only `USZ_ARTEMIS.Core` and `USZ_ARTEMIS.Core.Tests`. It avoids loading the main plugin and therefore does not require Visual Studio, Windows, or local ESAPI assemblies. | Use this solution for routine cross-platform development and CI of portable logic. From `eclipse_script/`, run `dotnet test USZ_ARTEMIS.Offline.sln`. |
+| `USZ_ARTEMIS.Offline.sln` | This solution contains only `USZ_ARTEMIS.Core` and `USZ_ARTEMIS.Core.Tests`. It avoids loading the main plugin and therefore does not require Visual Studio, Windows, or local ESAPI assemblies. | Use this solution for routine cross-platform development and CI of portable logic. From `esapi_script/`, run `dotnet test USZ_ARTEMIS.Offline.sln`. |
 | `USZ_ARTEMIS.sln` | This is the production Visual Studio solution. It contains `USZ_ARTEMIS` and `USZ_ARTEMIS.Core`, matching the dependency needed to build the Eclipse plugin. It excludes the offline test project so the clinical build remains separate from the cross-platform test toolchain. | Open this solution in Visual Studio on Windows to restore packages and build the x64 Eclipse plugin. The authoritative build and all Eclipse integration testing use this solution and the intended ESAPI installation. |
 
 The dependency direction is:
@@ -33,12 +33,12 @@ clinical behavior stays stable.
 Varian ESAPI assemblies are proprietary and are not committed to Git. For local builds, place them here:
 
 ```text
-eclipse_script/ESAPI 18.1/
+esapi_script/ESAPI 18.1/
 ├── VMS.TPS.Common.Model.API.dll
 └── VMS.TPS.Common.Model.Types.dll
 ```
 
-NuGet packages are restored into `eclipse_script/packages/`.
+NuGet packages are restored into `esapi_script/packages/`.
 
 Deployment-specific paths are loaded from `USZ_ARTEMIS.esapi.json` beside the
 DLL, independent of the versioned DLL filename. Start from
