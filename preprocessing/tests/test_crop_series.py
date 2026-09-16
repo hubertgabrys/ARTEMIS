@@ -1045,6 +1045,28 @@ def test_copy_and_crop_common_path_returns_skipped_result(monkeypatch):
     assert calls == ["copy", "crop"]
 
 
+def test_copy_and_crop_passes_ptv_option_to_structure_copy(monkeypatch):
+    options = []
+
+    def fake_copy(*args, **kwargs):
+        options.append(kwargs["propagate_ptvs"])
+        return "/tmp/RS_test.dcm"
+
+    monkeypatch.setattr(crop_series, "copy_structures", fake_copy)
+    monkeypatch.setattr(
+        crop_series,
+        "crop_registered_series",
+        lambda *args, **kwargs: crop_series.CropResult(status="skipped"),
+    )
+
+    crop_series.copy_structures_and_crop(
+        "/tmp", "patient", "plan", object(),
+        series_uid="1.2.3", base_series_uid="4.5.6", propagate_ptvs=True,
+    )
+
+    assert options == [True]
+
+
 def test_copy_and_crop_common_path_raises_on_crop_failure(monkeypatch):
     monkeypatch.setattr(
         crop_series,

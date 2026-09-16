@@ -67,7 +67,7 @@ def _make_rtstruct(path: Path, rois):
     return rtstruct
 
 
-def _copy(monkeypatch, tmp_path, rois):
+def _copy(monkeypatch, tmp_path, rois, *, propagate_ptvs=False):
     base_path = tmp_path / "base.dcm"
     target_path = tmp_path / "daily.dcm"
     base = _make_rtstruct(base_path, rois)
@@ -77,7 +77,10 @@ def _copy(monkeypatch, tmp_path, rois):
     monkeypatch.setattr(
         copy_module, "read_new_rtstruct", lambda *args, **kwargs: (target, target_path.name)
     )
-    copy_module.copy_structures(str(tmp_path), "patient", "plan_1a", IdentityTransform())
+    copy_module.copy_structures(
+        str(tmp_path), "patient", "plan_1a", IdentityTransform(),
+        propagate_ptvs=propagate_ptvs,
+    )
     assert base_path.read_bytes() == base_bytes
     return pydicom.dcmread(target_path)
 
@@ -106,6 +109,27 @@ def test_copy_structures_skips_ptvs_except_two_centimeter_helper(monkeypatch, tm
     ]
     assert len(_roi_contour(copied, "PTV+2cm_Ph").ContourSequence) == 2
     assert len(_roi_contour(copied, "CTV_1a").ContourSequence) == 1
+
+
+def test_copy_structures_propagates_ptvs_excluding_ph_except_crop_helper(
+    monkeypatch, tmp_path
+):
+    copied = _copy(
+        monkeypatch, tmp_path,
+        [
+            ("PTV_1a", [_contour(0)]),
+            ("ptvBoost", [_contour(1)]),
+            ("PTV_A_pH", [_contour(1)]),
+            ("PTV+2cm_Ph", [_contour(0), _contour(2)]),
+            ("CTV_1a", [_contour(1)]),
+        ],
+        propagate_ptvs=True,
+    )
+    assert [roi.ROIName for roi in copied.StructureSetROISequence] == [
+        "PTV_1a", "ptvBoost", "PTV+2cm_Ph", "CTV_1a"
+    ]
+    assert len(_roi_contour(copied, "PTV_1a").ContourSequence) == 1
+    assert len(_roi_contour(copied, "ptvBoost").ContourSequence) == 1
 
 
 @pytest.mark.parametrize("axis", [0, 2])

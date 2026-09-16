@@ -215,7 +215,8 @@ def read_new_rtstruct(current_directory, series_uid=None):
 
 
 def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform,
-                    series_uid=None, base_series_uid=None, progress_callback=None):
+                    series_uid=None, base_series_uid=None, progress_callback=None,
+                    propagate_ptvs=False):
     """Copy structures from the base plan RTSTRUCT to the daily RTSTRUCT."""
 
     # Read the base and new RTSTRUCT files referencing the chosen series.
@@ -274,12 +275,12 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
                 print(f"Skipping ROI {number} ({name}) because it does not match the plan suffix")
                 return True
 
-        # Keep only the +2cm_ph helper among PTV structures.
+        # The +2cm_ph helper is needed by the image crop; other _ph ROIs stay excluded.
         if name_lower.startswith("ptv") and name_lower.endswith("+2cm_ph"):
             pass  # allowed
         else:
             if (
-                name_lower.startswith("ptv")
+                (name_lower.startswith("ptv") and not propagate_ptvs)
                 or name_lower.startswith("zzz")
                 or name_lower.endswith("_ph")
             ):

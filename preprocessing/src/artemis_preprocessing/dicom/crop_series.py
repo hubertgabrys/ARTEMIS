@@ -877,6 +877,7 @@ def copy_structures_and_crop(
     series_uid: str | None,
     base_series_uid: str | None,
     progress_callback=None,
+    propagate_ptvs: bool = False,
 ) -> CropResult:
     """Copy transformed structures, then crop their registered image series.
 
@@ -914,6 +915,7 @@ def copy_structures_and_crop(
         series_uid=series_uid,
         base_series_uid=base_series_uid,
         progress_callback=progress_callback,
+        propagate_ptvs=propagate_ptvs,
     )
     resolved_rtstruct_path = Path(rtstruct_path).resolve()
 
