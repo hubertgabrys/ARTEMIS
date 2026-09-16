@@ -1,9 +1,11 @@
 import copy
 import os
 import re
+import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
 import pydicom
 from tqdm import tqdm
 
@@ -26,6 +28,61 @@ ROI_DISPLAY_COLOR_MAP = {
     "sigma": [255, 175, 0],
     "rectum": [191, 127, 0],
 }
+
+SLICE_PLANE_TOLERANCE_MM = 0.1
+
+
+def _contour_points(contour):
+    values = getattr(contour, "ContourData", None)
+    if values is None or not values or len(values) % 3:
+        raise ValueError("ContourData is missing or is not a sequence of XYZ points")
+    try:
+        points = np.asarray([float(value) for value in values], dtype=float).reshape(-1, 3)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ContourData contains invalid coordinates") from exc
+    if not np.all(np.isfinite(points)):
+        raise ValueError("ContourData contains non-finite coordinates")
+    return points
+
+
+def _ring_slice_range(rtstruct):
+    """Return the source-frame slice normal and inclusive +2cm helper extent."""
+    helpers = [
+        roi for roi in getattr(rtstruct, "StructureSetROISequence", [])
+        if str(getattr(roi, "ROIName", "")).casefold().startswith("ptv")
+        and str(getattr(roi, "ROIName", "")).casefold().endswith("+2cm_ph")
+    ]
+    if len(helpers) != 1:
+        raise ValueError(f"Expected one PTV +2cm_Ph helper ROI; found {len(helpers)}")
+    number = helpers[0].ROINumber
+    contours = [
+        contour
+        for roi_contour in getattr(rtstruct, "ROIContourSequence", [])
+        if getattr(roi_contour, "ReferencedROINumber", None) == number
+        for contour in getattr(roi_contour, "ContourSequence", [])
+    ]
+    if not contours:
+        raise ValueError("PTV +2cm_Ph helper ROI has no contours")
+
+    first_points = _contour_points(contours[0])
+    if len(first_points) < 3:
+        raise ValueError("PTV +2cm_Ph helper contour cannot define a slice plane")
+    _, singular_values, vh = np.linalg.svd(first_points - first_points.mean(axis=0))
+    if len(singular_values) < 2 or singular_values[1] < 1e-6:
+        raise ValueError("PTV +2cm_Ph helper contour cannot define a slice plane")
+    normal = vh[-1]
+
+    positions = []
+    for contour in contours:
+        positions.append(_contour_slice_position(contour, normal))
+    return normal, min(positions), max(positions)
+
+
+def _contour_slice_position(contour, normal):
+    projections = _contour_points(contour) @ normal
+    if float(np.ptp(projections)) > SLICE_PLANE_TOLERANCE_MM:
+        raise ValueError("Contour does not lie on a single +2cm helper slice plane")
+    return float(np.mean(projections))
 
 
 def transform_contour_points(transform, contour_data, precision: int = 8):
@@ -164,6 +221,10 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
     # Read the base and new RTSTRUCT files referencing the chosen series.
     rtstruct_base = read_base_rtstruct(patient_id, rtplan_label, series_uid=base_series_uid)
     rtstruct_new, rtstruct_new_filename = read_new_rtstruct(current_directory, series_uid)
+    if rtstruct_base is None or rtstruct_new is None or not rtstruct_new_filename:
+        raise ValueError("Base or daily RTSTRUCT could not be found")
+    slice_normal, lowest_ring_slice, highest_ring_slice = _ring_slice_range(rtstruct_base)
+    rtstruct_new = copy.deepcopy(rtstruct_new)
 
     # Extract plan suffix (e.g. "_1a") from the plan label if present
     match = re.search(r"_(\d[a-z])$", rtplan_label.lower())
@@ -179,12 +240,6 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
             target_for_uid = getattr(fr_seq[0], "FrameOfReferenceUID", None)
     except Exception:
         target_for_uid = None
-
-    # Reset (or initialize) the new RTSTRUCT sequences.
-    # We assume these sequences exist so we replace them with new, filtered sequences.
-    rtstruct_new.StructureSetROISequence = pydicom.sequence.Sequence()
-    rtstruct_new.ROIContourSequence = pydicom.sequence.Sequence()
-    rtstruct_new.RTROIObservationsSequence = pydicom.sequence.Sequence()
 
     # Determine which ROI numbers contain contour data
     roi_number_has_contour = set()
@@ -395,6 +450,33 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
             except Exception as exc:
                 print(f"Warning: failed to delete Limbus RTSTRUCT {limbus_path}: {exc}")
 
+    candidate_numbers = {
+        roi.ROINumber
+        for roi in rtstruct_base.StructureSetROISequence
+        if not skip_roi(getattr(roi, "ROIName", ""), getattr(roi, "ROINumber", None))
+    }
+
+    # Validate and select copied contours before changing the daily RTSTRUCT.
+    kept_numbers = set()
+    selected_by_item = {}
+    for roi_contour in getattr(rtstruct_base, "ROIContourSequence", []):
+        number = getattr(roi_contour, "ReferencedROINumber", None)
+        if number not in candidate_numbers:
+            continue
+        selected = []
+        for contour in getattr(roi_contour, "ContourSequence", []):
+            position = _contour_slice_position(contour, slice_normal)
+            if (lowest_ring_slice - SLICE_PLANE_TOLERANCE_MM <= position
+                    <= highest_ring_slice + SLICE_PLANE_TOLERANCE_MM):
+                selected.append(contour)
+        if selected:
+            kept_numbers.add(number)
+            selected_by_item[id(roi_contour)] = selected
+
+    rtstruct_new.StructureSetROISequence = pydicom.sequence.Sequence()
+    rtstruct_new.ROIContourSequence = pydicom.sequence.Sequence()
+    rtstruct_new.RTROIObservationsSequence = pydicom.sequence.Sequence()
+
     # --- Step 1: Filter Structure Set ROI Sequence ---
     # Process each ROI item based on its ROI Name (tag 3006,0026).
     # Record its associated ROI Number (tag 3006,0022) and copy the ROI item into the new StructureSetROISequence.
@@ -404,7 +486,7 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
     for roi in rtstruct_base.StructureSetROISequence:
         roi_name = getattr(roi, "ROIName", "")
         roi_number = getattr(roi, "ROINumber", None)
-        if skip_roi(roi_name, roi_number):
+        if roi_number not in candidate_numbers or roi_number not in kept_numbers:
             continue
         if roi_number is not None:
             approved_roi_numbers.add(roi_number)
@@ -425,23 +507,20 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
     for idx, roi_contour in enumerate(iterator, 1):
         # Retrieve the Referenced ROI Number (tag 3006,0084)
         ref_roi_num = getattr(roi_contour, "ReferencedROINumber", None)
-        if ref_roi_num not in approved_roi_numbers:
+        if ref_roi_num not in approved_roi_numbers or id(roi_contour) not in selected_by_item:
             continue
-
-        # Create a deep copy of the ROI contour to avoid modifying the base file.
-        new_roi_contour = copy.deepcopy(roi_contour)
 
         # Look up the ROI name that corresponds to this contour using the ROI number.
         roi_name = roi_lookup.get(ref_roi_num, "")
+        new_roi_contour = copy.deepcopy(roi_contour)
+        new_roi_contour.ContourSequence = pydicom.sequence.Sequence(
+            copy.deepcopy(selected_by_item[id(roi_contour)])
+        )
         _apply_roi_display_color(new_roi_contour, roi_name)
-        # Transform the coordinates for each contour within this ROI contour item.
         print(f"Copying ROI {ref_roi_num} ({roi_name})")
-        if hasattr(new_roi_contour, "ContourSequence"):
-            for contour in new_roi_contour.ContourSequence:
-                current_data = contour.ContourData
-                new_data = transform_contour_points(rigid_transform, current_data)
-                # Convert the transformed coordinates to strings as required by DICOM.
-                contour.ContourData = [str(v) for v in new_data]
+        for contour in new_roi_contour.ContourSequence:
+            new_data = transform_contour_points(rigid_transform, contour.ContourData)
+            contour.ContourData = [str(value) for value in new_data]
 
         rtstruct_new.ROIContourSequence.append(new_roi_contour)
         if progress_callback:
@@ -463,6 +542,22 @@ def copy_structures(current_directory, patient_id, rtplan_label, rigid_transform
 
     # --- Save the Updated RTSTRUCT ---
     output_filename = os.path.join(current_directory, rtstruct_new_filename)
-    pydicom.dcmwrite(output_filename, rtstruct_new, write_like_original=False)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{rtstruct_new_filename}.", suffix=".tmp", dir=current_directory
+    )
+    os.close(descriptor)
+    try:
+        pydicom.dcmwrite(temporary_name, rtstruct_new, write_like_original=False)
+        written = pydicom.dcmread(temporary_name)
+        if (len(written.StructureSetROISequence) != len(rtstruct_new.StructureSetROISequence)
+                or len(written.ROIContourSequence) != len(rtstruct_new.ROIContourSequence)
+                or len(written.RTROIObservationsSequence)
+                != len(rtstruct_new.RTROIObservationsSequence)
+                or [len(item.ContourSequence) for item in written.ROIContourSequence]
+                != [len(item.ContourSequence) for item in rtstruct_new.ROIContourSequence]):
+            raise ValueError("Staged RTSTRUCT did not retain the copied contours")
+        os.replace(temporary_name, output_filename)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
     # print(f"Updated RTSTRUCT saved to {output_filename}")
     return output_filename
