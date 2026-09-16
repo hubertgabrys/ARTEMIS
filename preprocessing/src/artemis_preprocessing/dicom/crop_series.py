@@ -40,6 +40,8 @@ class CropResult:
     warning_code: str | None = None
     caudal_missing_mm: float = 0.0
     cranial_missing_mm: float = 0.0
+    caudal_available_mm: float = 0.0
+    cranial_available_mm: float = 0.0
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -696,10 +698,14 @@ def crop_registered_series(
         if target_start < coverage_start or target_end > coverage_end:
             lower_missing = max(0.0, coverage_start - target_start)
             upper_missing = max(0.0, target_end - coverage_end)
+            lower_available = max(0.0, target_start - coverage_start)
+            upper_available = max(0.0, coverage_end - target_end)
             if normal[2] >= 0:
                 caudal_missing, cranial_missing = lower_missing, upper_missing
+                caudal_available, cranial_available = lower_available, upper_available
             else:
                 caudal_missing, cranial_missing = upper_missing, lower_missing
+                caudal_available, cranial_available = upper_available, lower_available
             warning = (
                 f"ROI '{roi_name}' extends outside the referenced image series; "
                 "leaving the image series unchanged"
@@ -712,6 +718,8 @@ def crop_registered_series(
                 warning_code="insufficient_longitudinal_coverage",
                 caudal_missing_mm=caudal_missing,
                 cranial_missing_mm=cranial_missing,
+                caudal_available_mm=caudal_available,
+                cranial_available_mm=cranial_available,
             )
         in_plane_status = _target_in_plane_status(
             roi_contour,
@@ -869,6 +877,7 @@ def copy_structures_and_crop(
     series_uid: str | None,
     base_series_uid: str | None,
     progress_callback=None,
+    propagate_ptvs: bool = False,
 ) -> CropResult:
     """Copy transformed structures, then crop their registered image series.
 
@@ -906,6 +915,7 @@ def copy_structures_and_crop(
         series_uid=series_uid,
         base_series_uid=base_series_uid,
         progress_callback=progress_callback,
+        propagate_ptvs=propagate_ptvs,
     )
     resolved_rtstruct_path = Path(rtstruct_path).resolve()
 

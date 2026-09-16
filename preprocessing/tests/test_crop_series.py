@@ -384,6 +384,8 @@ def test_uncroppable_mr_still_checks_longitudinal_coverage(tmp_path: Path):
     assert result.warning_code == "insufficient_longitudinal_coverage"
     assert result.caudal_missing_mm == pytest.approx(1.5)
     assert result.cranial_missing_mm == pytest.approx(0.0)
+    assert result.caudal_available_mm == pytest.approx(0.0)
+    assert result.cranial_available_mm == pytest.approx(3.5)
     assert _snapshot(tmp_path) == before
 
 
@@ -700,18 +702,25 @@ def test_padding_clamps_to_series_boundary(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "iop, contours, expected_caudal, expected_cranial",
+    "iop, contours, expected_caudal_missing, expected_cranial_missing, "
+    "expected_caudal_available, expected_cranial_available",
     [
-        ((1, 0, 0, 0, 1, 0), (-2, 12), 1.5, 2.5),
-        ((-1, 0, 0, 0, 1, 0), (-2, 12), 2.5, 1.5),
+        ((1, 0, 0, 0, 1, 0), (-2, 6), 1.5, 0.0, 0.0, 3.5),
+        ((-1, 0, 0, 0, 1, 0), (-2, 6), 0.0, 1.5, 3.5, 0.0),
+        ((1, 0, 0, 0, 1, 0), (3, 12), 0.0, 2.5, 3.5, 0.0),
+        ((-1, 0, 0, 0, 1, 0), (3, 12), 2.5, 0.0, 0.0, 3.5),
+        ((1, 0, 0, 0, 1, 0), (-2, 12), 1.5, 2.5, 0.0, 0.0),
+        ((-1, 0, 0, 0, 1, 0), (-2, 12), 2.5, 1.5, 0.0, 0.0),
     ],
 )
 def test_longitudinal_shortfall_skips_crop_and_reports_patient_directions(
     tmp_path: Path,
     iop,
     contours,
-    expected_caudal: float,
-    expected_cranial: float,
+    expected_caudal_missing: float,
+    expected_cranial_missing: float,
+    expected_caudal_available: float,
+    expected_cranial_available: float,
 ):
     series_uid, images = _write_image_series(tmp_path, iop=iop)
     normal = np.cross(np.asarray(iop[:3]), np.asarray(iop[3:]))
@@ -735,8 +744,10 @@ def test_longitudinal_shortfall_skips_crop_and_reports_patient_directions(
 
     assert result.status == "skipped"
     assert result.warning_code == "insufficient_longitudinal_coverage"
-    assert result.caudal_missing_mm == pytest.approx(expected_caudal)
-    assert result.cranial_missing_mm == pytest.approx(expected_cranial)
+    assert result.caudal_missing_mm == pytest.approx(expected_caudal_missing)
+    assert result.cranial_missing_mm == pytest.approx(expected_cranial_missing)
+    assert result.caudal_available_mm == pytest.approx(expected_caudal_available)
+    assert result.cranial_available_mm == pytest.approx(expected_cranial_available)
     assert result.source_series_uid == series_uid
     assert _snapshot(tmp_path) == before
 
@@ -1032,6 +1043,28 @@ def test_copy_and_crop_common_path_returns_skipped_result(monkeypatch):
 
     assert result.status == "skipped"
     assert calls == ["copy", "crop"]
+
+
+def test_copy_and_crop_passes_ptv_option_to_structure_copy(monkeypatch):
+    options = []
+
+    def fake_copy(*args, **kwargs):
+        options.append(kwargs["propagate_ptvs"])
+        return "/tmp/RS_test.dcm"
+
+    monkeypatch.setattr(crop_series, "copy_structures", fake_copy)
+    monkeypatch.setattr(
+        crop_series,
+        "crop_registered_series",
+        lambda *args, **kwargs: crop_series.CropResult(status="skipped"),
+    )
+
+    crop_series.copy_structures_and_crop(
+        "/tmp", "patient", "plan", object(),
+        series_uid="1.2.3", base_series_uid="4.5.6", propagate_ptvs=True,
+    )
+
+    assert options == [True]
 
 
 def test_copy_and_crop_common_path_raises_on_crop_failure(monkeypatch):
