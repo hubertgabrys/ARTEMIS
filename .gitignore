@@ -58,3 +58,5 @@ eclipse_script/USZ_ARTEMIS/Configuration/*.esapi.json
 *.local.config
 .env
 /reference
+/eclipse_script/ESAPI-19.0
+/eclipse_script/reference
