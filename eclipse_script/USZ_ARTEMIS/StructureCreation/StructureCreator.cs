@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using USZ_ARTEMIS.Configuration;
 using USZ_ARTEMIS.Core.StructureCreation;
 using USZ_ARTEMIS.DataExtraction;
 using USZ_ARTEMIS.DataQualification;
@@ -412,10 +413,10 @@ namespace USZ_ARTEMIS.StructureCreation
             string tempBodyId = "tempBODY";
 
             PatientOrientation orientation = PatientOrientation.NoOrientation;
-            RailPosition railPosition = RailPosition.In;
-            var HUvalues = CouchDataExtractor.GetCouchHUValues(couchModel);
+            string couchConfiguration = AppPaths.CouchConfiguration;
 
-            IReadOnlyList<Structure> addedStructures;
+            IReadOnlyList<Structure> addedStructures = null;
+            bool previousCouchWasRemoved = false;
             bool resized;
             string errorMsg;
 
@@ -444,6 +445,7 @@ namespace USZ_ARTEMIS.StructureCreation
                         if (removed ||
                             (removedStructureIds != null && removedStructureIds.Count > 0))
                         {
+                            previousCouchWasRemoved = true;
                             existingCouchRemoved?.Invoke();
                         }
 
@@ -466,12 +468,9 @@ namespace USZ_ARTEMIS.StructureCreation
                 }
                 bool added = structureSet.AddCouchStructures(
                     couchModel,
+                    couchConfiguration,
+                    new Dictionary<string, int>(),
                     orientation,
-                    railPosition,
-                    railPosition,
-                    HUvalues[0],
-                    HUvalues[1],
-                    HUvalues[2],
                     out addedStructures,
                     out resized,
                     out errorMsg);
@@ -481,8 +480,58 @@ namespace USZ_ARTEMIS.StructureCreation
                 }
                 if (!added || addedStructures == null || addedStructures.Count == 0)
                 {
-                    throw new Exception("ERROR: No couch structures created!");
+                    throw new InvalidOperationException(
+                        $"No couch structures created for model '{couchModel}' and configuration " +
+                        $"'{couchConfiguration}'. Verify the commissioned Eclipse 19.0 couch configuration.");
                 }
+
+                // ESAPI 19.0 does not document the huOverrides dictionary keys. Apply the
+                // established clinical values to the returned structures by their IDs.
+                CouchDataExtractor.ApplyCouchHUOverrides(
+                    couchModel,
+                    addedStructures,
+                    structure => structure.Id,
+                    (structure, hu) =>
+                    {
+                        structure.SetAssignedHU(hu);
+                        if (!structure.GetAssignedHU(out double assignedHU) || assignedHU != hu)
+                        {
+                            throw new InvalidOperationException(
+                                $"The HU override for couch structure '{structure.Id}' could not be verified.");
+                        }
+                    });
+            }
+            catch (Exception creationException)
+            {
+                if (addedStructures != null && addedStructures.Count > 0)
+                {
+                    try
+                    {
+                        if (!structureSet.RemoveCouchStructures(out _, out string cleanupError))
+                        {
+                            throw new InvalidOperationException(cleanupError);
+                        }
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        throw new AggregateException(
+                            "Couch creation failed and the incomplete couch could not be removed. " +
+                            "Do not save these modifications.",
+                            creationException,
+                            cleanupException);
+                    }
+                }
+
+                if (previousCouchWasRemoved && existingCouchRemoved == null)
+                {
+                    throw new InvalidOperationException(
+                        "Couch creation failed after removing the previous couch. " +
+                        "The previous couch has not been restored; do not save these modifications. " +
+                        creationException.Message,
+                        creationException);
+                }
+
+                throw;
             }
             finally
             {

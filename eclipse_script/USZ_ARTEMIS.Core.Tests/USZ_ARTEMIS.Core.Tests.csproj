@@ -17,5 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\USZ_ARTEMIS.Core\USZ_ARTEMIS.Core.csproj" />
+    <Compile Include="..\USZ_ARTEMIS\DataExtraction\CouchDataExtractor.cs" Link="DataExtraction\CouchDataExtractor.cs" />
   </ItemGroup>
 </Project>
