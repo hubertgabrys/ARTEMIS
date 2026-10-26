@@ -27,8 +27,8 @@ USZ_ARTEMIS.Core.Tests -> USZ_ARTEMIS.Core
 `USZ_ARTEMIS` and `USZ_ARTEMIS.Core.Tests` must not reference each other. The C#
 namespaces and ESAPI entry point remain stable. The production target is
 ESAPI 19.0 / Eclipse 19.0, .NET Framework 4.8, and x64. The current plugin is
-`USZ_ARTEMIS_v26.10.26.0.esapi.dll`, with assembly, file, and informational
-version `26.10.26.0`.
+`USZ_ARTEMIS_v26.10.26.1.esapi.dll`, with assembly, file, and informational
+version `26.10.26.1`.
 
 ## Required Local Files
 
@@ -62,7 +62,7 @@ ESAPI 19.0 replaces the two `RailPosition` arguments and three HU arguments of
 The supplied reference does not specify the dictionary keys. ARTEMIS therefore
 passes an empty dictionary, then assigns and reads back the existing clinical HU
 overrides on the returned structures by ID: `CouchSurface = -432` for
-`Exact_IGRT_Couch_Top_medium`; `CouchSurface = -900` and `CouchInterior = -700`
+`Exact IGRT Couch, medium`; `CouchSurface = -900` and `CouchInterior = -700`
 for `Exact_Couch_Top_with_Flat_panel`. Other components retain their Eclipse
 model values. Missing or ambiguous override targets and failed assignments
 raise errors and trigger removal of the incomplete couch. The existing BODY

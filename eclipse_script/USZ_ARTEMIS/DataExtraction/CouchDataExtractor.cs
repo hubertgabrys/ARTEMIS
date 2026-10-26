@@ -6,16 +6,14 @@ namespace USZ_ARTEMIS.DataExtraction
 {
     class CouchDataExtractor
     {
-
-
-
+        public const string IgrtMediumModelName = "Exact IGRT Couch, medium";
 
         public static Dictionary<string, int> GetCouchHUOverrides(string couchModel)
         {
             // Omitted structures retain the HU values configured in the Eclipse model.
             switch (couchModel)
             {
-                case "Exact_IGRT_Couch_Top_medium":
+                case IgrtMediumModelName:
                     return new Dictionary<string, int> { { "CouchSurface", -432 } };
                 case "Exact_Couch_Top_with_Flat_panel":
                     return new Dictionary<string, int>

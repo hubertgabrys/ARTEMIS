@@ -9,11 +9,12 @@ namespace USZ_ARTEMIS.Core.Tests.StructureCreation;
 public sealed class CouchHUOverrideTests
 {
     [Fact]
-    public void Igrt_couch_preserves_surface_override_and_model_defaults()
+    public void Igrt_medium_uses_supported_ESAPI_model_name_and_preserves_HU_values()
     {
         var structures = CreateStructures("CouchInterior", "CouchSurface", "CouchRails");
 
-        Apply("Exact_IGRT_Couch_Top_medium", structures);
+        Assert.Equal("Exact IGRT Couch, medium", CouchDataExtractor.IgrtMediumModelName);
+        Apply(CouchDataExtractor.IgrtMediumModelName, structures);
 
         Assert.Equal(-432, structures.Single(s => s.Id == "CouchSurface").AssignedHU);
         Assert.Null(structures.Single(s => s.Id == "CouchInterior").AssignedHU);
@@ -65,7 +66,7 @@ public sealed class CouchHUOverrideTests
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => CouchDataExtractor.ApplyCouchHUOverrides(
-                "Exact_IGRT_Couch_Top_medium", structures, s => s.Id, (_, _) => throw failure));
+                CouchDataExtractor.IgrtMediumModelName, structures, s => s.Id, (_, _) => throw failure));
 
         Assert.Same(failure, exception);
     }
