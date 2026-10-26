@@ -25,20 +25,24 @@ USZ_ARTEMIS.Core.Tests -> USZ_ARTEMIS.Core
 ```
 
 `USZ_ARTEMIS` and `USZ_ARTEMIS.Core.Tests` must not reference each other. The C#
-namespaces and ESAPI assembly name are preserved from the previous project so
-clinical behavior stays stable.
+namespaces and ESAPI entry point remain stable. The production target is
+ESAPI 19.0 / Eclipse 19.0, .NET Framework 4.8, and x64. The current plugin is
+`USZ_ARTEMIS_v26.10.26.0.esapi.dll`, with assembly, file, and informational
+version `26.10.26.0`.
 
 ## Required Local Files
 
 Varian ESAPI assemblies are proprietary and are not committed to Git. For local builds, place them here:
 
 ```text
-eclipse_script/ESAPI 18.1/
+eclipse_script/ESAPI-19.0/
 ├── VMS.TPS.Common.Model.API.dll
 └── VMS.TPS.Common.Model.Types.dll
 ```
 
 NuGet packages are restored into `eclipse_script/packages/`.
+Both ESAPI references are pinned to the supplied assemblies' strong-name
+version `1.1.0.24` and are not copied to the output or embedded in the plugin.
 
 Deployment-specific paths are loaded from `USZ_ARTEMIS.esapi.json` beside the
 DLL, independent of the versioned DLL filename. Start from
@@ -46,11 +50,53 @@ DLL, independent of the versioned DLL filename. Start from
 file out of Git. When `USZ_ARTEMIS.esapi.json` is present under
 `Configuration/`, the Visual Studio build copies it beside the output DLL.
 
+The same local JSON file accepts `CouchConfiguration`. Leave it empty only when
+the selected Eclipse couch model has a single configuration, as documented in
+the ESAPI 19.0 [StructureSet reference](reference/esapi-19/API/StructureSet.md#addcouchstructures).
+If the model has multiple configurations, set the exact commissioned configuration
+name, preserving the previous rails-in geometry where applicable. ARTEMIS does
+not guess a configuration name or retry with another configuration.
+
+ESAPI 19.0 replaces the two `RailPosition` arguments and three HU arguments of
+`AddCouchStructures` with a configuration name and an HU-override dictionary.
+The supplied reference does not specify the dictionary keys. ARTEMIS therefore
+passes an empty dictionary, then assigns and reads back the existing clinical HU
+overrides on the returned structures by ID: `CouchSurface = -432` for
+`Exact_IGRT_Couch_Top_medium`; `CouchSurface = -900` and `CouchInterior = -700`
+for `Exact_Couch_Top_with_Flat_panel`. Other components retain their Eclipse
+model values. Missing or ambiguous override targets and failed assignments
+raise errors and trigger removal of the incomplete couch. The existing BODY
+restoration and couch repositioning rollback remain in place.
+If the initial replacement fails after removing an existing couch, the error
+explicitly instructs the user to discard the modifications; that original
+couch is not automatically restored by the initial creation path.
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and
 build the x64 configuration. Build outputs are generated under the main
 project's `plugins/` folder and are ignored by Git.
+
+```powershell
+MSBuild.exe USZ_ARTEMIS.sln /restore /p:RestorePackagesConfig=true /p:Configuration=Release /p:Platform=x64
+```
+
+The migration audit also checked every other modified or removed member listed
+in the ESAPI 19.0 [breaking changes](reference/esapi-19/guide/02-eclipse-scripting-api.md#breaking-changes-in-esapi-190).
+None has an active call site in this project. The exact couch signature was
+verified against the supplied 19.0 API DLL as well as the member reference.
+
+Before clinical deployment, validate on the licensed Eclipse 19.0 workstation:
+
+- Configure and verify the selected couch configuration, component IDs, rail
+  positions, HU assignments, image orientation, and automatic positioning.
+- Check BODY restoration, retry success, and rollback after creation or HU
+  assignment failures. If cleanup or restoration fails, discard the changes.
+- Exercise plan copying, structure creation and metadata rules, clinical-goal
+  evaluation, and QA/reporting against commissioned test cases.
+- Deploy the rebuilt main plugin, remove stale standalone `USZ_ARTEMIS.Core.dll`
+  copies, restart Eclipse, and confirm the displayed version. Core remains
+  embedded through Costura; this migration adds no main-to-Core API references.
 
 ## Offline development on macOS
 
@@ -61,6 +107,10 @@ existing .NET Framework 4.8 plugin can consume it. Cross-platform tests target
 ```bash
 dotnet test USZ_ARTEMIS.Offline.sln
 ```
+
+The couch HU tests compile the ESAPI-independent `CouchDataExtractor.cs` as a
+linked source file. They check the production mapping and failure behavior
+without adding ESAPI/WPF dependencies or a new Core deployment dependency.
 
 Keep Varian and WPF-dependent code in `USZ_ARTEMIS`. Its authoritative build
 and all Eclipse integration testing remain Windows-only.
