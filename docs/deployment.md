@@ -25,7 +25,7 @@ The production target is Varian ESAPI 19.0. Build
 `eclipse_script/ESAPI-19.0/` using Visual
 Studio on the licensed Windows workstation.
 
-Deploy the generated `USZ_ARTEMIS_v26.10.26.1.esapi.dll` to the Varian Published
+Deploy the generated `USZ_ARTEMIS_v26.10.28.0.esapi.dll` to the Varian Published
 Scripts folder. Follow the [ESAPI 19.0 migration and validation notes](../eclipse_script/README.md),
 including the local `CouchConfiguration` setting and verification of couch
 geometry and HU values in Eclipse 19.0.
