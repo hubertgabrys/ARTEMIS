@@ -71,6 +71,32 @@ If the initial replacement fails after removing an existing couch, the error
 explicitly instructs the user to discard the modifications; that original
 couch is not automatically restored by the initial creation path.
 
+## Preprocessing launcher
+
+The **Launch preprocessing** button above **Plan Adaptation** starts the
+separately deployed Python executable. Set `PreprocessingExecutablePath` and
+`PreprocessingWorkingDirectory` to absolute paths in `USZ_ARTEMIS.esapi.json`
+(or the configuration selected by `USZ_ARTEMIS_APP_PATHS`). Use the existing
+standalone launcher's `ExecutablePath` and `WorkingDirectory` values when
+migrating. Keep the executable's `.env` in the configured working directory.
+No Python build or source dependency is added to the ESAPI solution.
+
+The button passes four positional arguments: patient ID, open plan ID, plan
+DICOM UID, and Windows username, matching the standalone launcher. The Python
+GUI currently consumes the first three arguments. A patient and plan must be
+open; incomplete context, missing or invalid configuration, unavailable paths,
+and process-start failures produce an error dialog. The launch is asynchronous
+and does not save or modify the plan. The standalone launcher remains available
+for independent deployment.
+
+Build and deploy the updated main ESAPI plugin. On the licensed Eclipse 19.0
+workstation, confirm the button location and launch a commissioned test case;
+verify the patient/plan shown in preprocessing and `.env` loading from the
+working directory. Verify paths containing spaces, missing configuration,
+unavailable executable/working directory, and Windows denying process startup.
+The launch helper is tested offline through linked source, adding no new
+main-to-Core API references or standalone Core deployment requirement.
+
 ## Plan copying
 
 Plan copying checks whether the destination structure set can use physical

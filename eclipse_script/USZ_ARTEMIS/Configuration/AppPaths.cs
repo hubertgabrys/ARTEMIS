@@ -65,6 +65,16 @@ namespace USZ_ARTEMIS.Configuration
             get { return GetValue("RegistrationCheckExecutablePath", @"\\YOUR-SERVER\YOUR-SHARE\ARTEMIS\Utilities\RegistrationCheck\RegistrationCheck.exe"); }
         }
 
+        public static string PreprocessingExecutablePath
+        {
+            get { return GetValue("PreprocessingExecutablePath", ""); }
+        }
+
+        public static string PreprocessingWorkingDirectory
+        {
+            get { return GetValue("PreprocessingWorkingDirectory", ""); }
+        }
+
         private static string GetValue(string key, string defaultValue)
         {
             string value;

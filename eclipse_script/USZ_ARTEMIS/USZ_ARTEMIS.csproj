@@ -181,6 +181,7 @@
     <Compile Include="StructureCreation\StructureSettings.cs" />
     <Compile Include="Tools\Actions.cs" />
     <Compile Include="Tools\PlanCopyMaterialTable.cs" />
+    <Compile Include="Tools\PreprocessingLauncher.cs" />
     <Compile Include="Tools\ExtractData.cs" />
     <Compile Include="DataExtraction\CouchDataExtractor.cs" />
     <Compile Include="StructureCreation\ImageFeatureExtractor.cs" />
@@ -190,6 +191,7 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="UserControls\StartPage.PlanCopy.cs" />
+    <Compile Include="UserControls\StartPage.Preprocessing.cs" />
     <Compile Include="UserControls\StartPage.QA.cs" />
     <Compile Include="UserControls\StartPage.Rules.cs" />
     <Compile Include="UserControls\StartPage.Structures.cs" />

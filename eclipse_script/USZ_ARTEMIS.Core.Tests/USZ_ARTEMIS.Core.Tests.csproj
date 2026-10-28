@@ -19,5 +19,6 @@
     <ProjectReference Include="..\USZ_ARTEMIS.Core\USZ_ARTEMIS.Core.csproj" />
     <Compile Include="..\USZ_ARTEMIS\DataExtraction\CouchDataExtractor.cs" Link="DataExtraction\CouchDataExtractor.cs" />
     <Compile Include="..\USZ_ARTEMIS\Tools\PlanCopyMaterialTable.cs" Link="Planning\PlanCopyMaterialTable.cs" />
+    <Compile Include="..\USZ_ARTEMIS\Tools\PreprocessingLauncher.cs" Link="Launching\PreprocessingLauncher.cs" />
   </ItemGroup>
 </Project>
