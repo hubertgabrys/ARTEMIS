@@ -370,7 +370,30 @@ namespace USZ_ARTEMIS
                 return;
             }
 
+            string materialTableWarning = Tools.PlanCopyMaterialTable.CheckCompatibility(
+                newStructureSet.GetPhysicalMaterialTable,
+                newStructureSet.CanUsePhysicalMaterialTable);
+
             var copiedPlan = originalPlan.Course.CopyPlanSetup(originalPlan, newStructureSet, null);
+
+            if (string.IsNullOrEmpty(materialTableWarning))
+            {
+                materialTableWarning = Tools.PlanCopyMaterialTable.Assign(
+                    copiedPlan.StructureSet.GetPhysicalMaterialTable,
+                    copiedPlan.StructureSet.SetPhysicalMaterialTable);
+            }
+
+            if (!string.IsNullOrEmpty(materialTableWarning))
+            {
+                MessageBox.Show(
+                    $"ARTEMIS could not automatically confirm physical material table " +
+                    $"'{Tools.PlanCopyMaterialTable.TableName}' on the destination structure set.\n\n" +
+                    "Plan copying will continue. Please assign or verify this table manually " +
+                    "in Eclipse before dose calculation.\n\n" + materialTableWarning,
+                    "Physical Material Table Warning",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
 
             string fractionSuffix = cb_FractionLetter.Text;
             PlanCopyNames copyNames = PlanCopyNames.Create(originalPlan.Id, originalPlan.Name, fractionSuffix);

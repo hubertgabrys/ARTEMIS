@@ -180,6 +180,7 @@
     <Compile Include="StructureCreation\StructureHelpers.cs" />
     <Compile Include="StructureCreation\StructureSettings.cs" />
     <Compile Include="Tools\Actions.cs" />
+    <Compile Include="Tools\PlanCopyMaterialTable.cs" />
     <Compile Include="Tools\ExtractData.cs" />
     <Compile Include="DataExtraction\CouchDataExtractor.cs" />
     <Compile Include="StructureCreation\ImageFeatureExtractor.cs" />
