@@ -71,6 +71,18 @@ If the initial replacement fails after removing an existing couch, the error
 explicitly instructs the user to discard the modifications; that original
 couch is not automatically restored by the initial creation path.
 
+## Plan copying
+
+Plan copying checks whether the destination structure set can use physical
+material table `AcurosXB-13.5`, assigns it immediately after copying, and reads
+it back. An already assigned matching table is left in place. If the check,
+assignment, or verification fails, ARTEMIS shows a warning and continues plan
+copying; assign or verify the table manually in Eclipse before dose calculation.
+This setting belongs to the destination structure set and therefore also affects
+other plans sharing it. It does not select the plan's dose-calculation model.
+The implementation uses the ESAPI 19.0
+[physical material table methods](reference/esapi-19/API/StructureSet.md#canusephysicalmaterialtable).
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and
@@ -94,6 +106,10 @@ Before clinical deployment, validate on the licensed Eclipse 19.0 workstation:
   assignment failures. If cleanup or restoration fails, discard the changes.
 - Exercise plan copying, structure creation and metadata rules, clinical-goal
   evaluation, and QA/reporting against commissioned test cases.
+- Verify automatic material table assignment, an already matching table, and
+  warning-only continuation when the table is unavailable or assignment fails.
+  Confirm `AcurosXB-13.5` is commissioned for the intended workflow and that
+  other plans sharing the destination structure set are accounted for.
 - Deploy the rebuilt main plugin, remove stale standalone `USZ_ARTEMIS.Core.dll`
   copies, restart Eclipse, and confirm the displayed version. Core remains
   embedded through Costura; this migration adds no main-to-Core API references.
