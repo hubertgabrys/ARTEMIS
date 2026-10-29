@@ -1686,6 +1686,14 @@ namespace USZ_ARTEMIS.Actions
                             OutputStructure = "Bowel+Sigma+3mm_Ph",
                             MarginMm = 3.0
                         });
+                        ruleSet.Rules.Add(new StructureRule
+                        {
+                            Type = RuleType.Expansion,
+                            InputStructures = new List<string> { "Urethra_PRV" },
+                            OutputStructure = "Urethra_PRV+2mm_Ph",
+                            MarginMm = 2.0
+                        });
+
 
                         // Generate PTV1
                         ruleSet.Rules.Add(new StructureRule
@@ -1700,7 +1708,7 @@ namespace USZ_ARTEMIS.Actions
                         ruleSet.Rules.Add(new StructureRule
                         {
                             Type = RuleType.Subtraction,
-                            InputStructures = new List<string> { ctv1Id, "Bowel+Sigma+Rectum+Bladder+3mm_Ph" },
+                            InputStructures = new List<string> { ctv1Id, "Bowel+Sigma+Rectum+Bladder+3mm_Ph", "Urethra_PRV+2mm_Ph" },
                             OutputStructure = ctv1Id + "_crop_Ph"
                         });
 
@@ -1789,6 +1797,13 @@ namespace USZ_ARTEMIS.Actions
                             OutputStructure = "Bowel+Sigma+3mm_Ph",
                             MarginMm = 3.0
                         });
+                        ruleSet.Rules.Add(new StructureRule
+                        {
+                            Type = RuleType.Expansion,
+                            InputStructures = new List<string> { "Urethra_PRV" },
+                            OutputStructure = "Urethra_PRV+2mm_Ph",
+                            MarginMm = 2.0
+                        });
 
                         // Generate PTV1
                         ruleSet.Rules.Add(new StructureRule
@@ -1812,7 +1827,7 @@ namespace USZ_ARTEMIS.Actions
                         ruleSet.Rules.Add(new StructureRule
                         {
                             Type = RuleType.Subtraction,
-                            InputStructures = new List<string> { ctv1Id, "Bowel+Sigma+Rectum+Bladder+3mm_Ph" },
+                            InputStructures = new List<string> { ctv1Id, "Bowel+Sigma+Rectum+Bladder+3mm_Ph", "Urethra_PRV+2mm_Ph" },
                             OutputStructure = ctv1Id + "_crop_Ph"
                         });
 
