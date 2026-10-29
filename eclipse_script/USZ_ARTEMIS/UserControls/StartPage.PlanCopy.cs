@@ -686,6 +686,26 @@ namespace USZ_ARTEMIS
                     MessageBoxImage.Error);
             }
 
+            var structureReminders = Tools.PlanCopyStructureReminders.Create(
+                copiedPlan.StructureSet.Structures.Select(structure => structure.Id));
+            if (!string.IsNullOrEmpty(structureReminders.AvoidEntryDoseReminder))
+            {
+                MessageBox.Show(
+                    structureReminders.AvoidEntryDoseReminder,
+                    "Plan Optimization Reminder",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+
+            if (!string.IsNullOrEmpty(structureReminders.MaterialOverrideReminder))
+            {
+                MessageBox.Show(
+                    structureReminders.MaterialOverrideReminder,
+                    "Manual Material Override Verification Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
             MessageBox.Show("Success!");
         }
 

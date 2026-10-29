@@ -109,6 +109,26 @@ other plans sharing it. It does not select the plan's dose-calculation model.
 The implementation uses the ESAPI 19.0
 [physical material table methods](reference/esapi-19/API/StructureSet.md#canusephysicalmaterialtable).
 
+After copying optimization objectives, an information dialog reminds the planner
+to manually enable **Avoid entry dose** for `OR_Hip_Water_Ph` when that structure
+is present in the destination structure set, including when it is empty.
+For present structures, a separate warning requires manual verification that
+`OR_Hip_Water` and `OR_Hip_Water_Ph` have material override **Water**, and
+`HighDensity_Ph` has material override **Titanium Alloy**, before optimization
+or dose calculation. Absent structures do not produce reminders.
+
+These named material overrides cannot be read through the public ESAPI 19.0
+`Structure` API, as checked against the supplied 19.0 assembly and
+[Structure reference](reference/esapi-19/API/Structure.md#getassignedhu).
+HU overrides and the structure set's physical material table do not confirm
+the named material assignment. ARTEMIS therefore requests manual verification
+and does not report these overrides as automatically verified or change them.
+The reminder logic is tested offline through linked source and adds no new
+main-to-Core references. Rebuild and deploy the main ESAPI assembly, then verify
+the information and warning dialogs on Eclipse 19.0 with each target structure
+present and absent, both Water structure IDs present, an empty target structure,
+and correct, missing, or incorrect named material overrides.
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and

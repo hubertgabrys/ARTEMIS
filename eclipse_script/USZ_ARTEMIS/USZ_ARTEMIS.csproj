@@ -181,6 +181,7 @@
     <Compile Include="StructureCreation\StructureSettings.cs" />
     <Compile Include="Tools\Actions.cs" />
     <Compile Include="Tools\PlanCopyMaterialTable.cs" />
+    <Compile Include="Tools\PlanCopyStructureReminders.cs" />
     <Compile Include="Tools\PreprocessingLauncher.cs" />
     <Compile Include="Tools\ExtractData.cs" />
     <Compile Include="DataExtraction\CouchDataExtractor.cs" />
