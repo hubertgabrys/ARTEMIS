@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace USZ_ARTEMIS.Tools
 {
@@ -41,6 +42,20 @@ namespace USZ_ARTEMIS.Tools
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+        }
+
+        internal static async Task<int> RunAsync(ProcessStartInfo startInfo)
+        {
+            using (var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
+            {
+                var exited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                process.Exited += (_, __) => exited.TrySetResult(true);
+                if (!process.Start())
+                    throw new InvalidOperationException("Windows did not start the preprocessing executable.");
+
+                await exited.Task.ConfigureAwait(false);
+                return process.ExitCode;
+            }
         }
 
         private static bool IsAbsolutePath(string path)

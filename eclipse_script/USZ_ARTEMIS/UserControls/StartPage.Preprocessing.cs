@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Windows;
 using USZ_ARTEMIS.Configuration;
 using USZ_ARTEMIS.Tools;
@@ -8,7 +7,7 @@ namespace USZ_ARTEMIS
 {
     public partial class StartPage
     {
-        private void BtnLaunchPreprocessing_Click(object sender, RoutedEventArgs e)
+        private async void BtnLaunchPreprocessing_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -21,12 +20,11 @@ namespace USZ_ARTEMIS
                     AppPaths.PreprocessingWorkingDirectory,
                     context.Patient?.Id, plan?.Id, plan?.UID, Environment.UserName);
 
-                // Dispose the process handle without waiting for or terminating the GUI.
-                using (var process = Process.Start(startInfo))
-                {
-                    if (process == null)
-                        throw new InvalidOperationException("Windows did not start the preprocessing executable.");
-                }
+                int exitCode = await PreprocessingLauncher.RunAsync(startInfo);
+                if (exitCode != 0)
+                    throw new InvalidOperationException(
+                        $"Preprocessing exited with code {exitCode}. If its window did not open, verify that " +
+                        "the .env file beside the executable defines INPUT_DIR and BASEPLAN_DIR.");
             }
             catch (Exception ex)
             {

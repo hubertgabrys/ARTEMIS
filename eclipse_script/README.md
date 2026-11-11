@@ -27,8 +27,8 @@ USZ_ARTEMIS.Core.Tests -> USZ_ARTEMIS.Core
 `USZ_ARTEMIS` and `USZ_ARTEMIS.Core.Tests` must not reference each other. The C#
 namespaces and ESAPI entry point remain stable. The production target is
 ESAPI 19.0 / Eclipse 19.0, .NET Framework 4.8, and x64. The current plugin is
-`USZ_ARTEMIS_v26.10.28.0.esapi.dll`, with assembly, file, and informational
-version `26.10.28.0`.
+`USZ_ARTEMIS_v26.10.29.0.esapi.dll`, with assembly, file, and informational
+version `26.10.29.0`.
 
 ## Required Local Files
 
@@ -78,22 +78,25 @@ separately deployed Python executable. Set `PreprocessingExecutablePath` and
 `PreprocessingWorkingDirectory` to absolute paths in `USZ_ARTEMIS.esapi.json`
 (or the configuration selected by `USZ_ARTEMIS_APP_PATHS`). Use the existing
 standalone launcher's `ExecutablePath` and `WorkingDirectory` values when
-migrating. Keep the executable's `.env` in the configured working directory.
+migrating. Keep `.env` beside the executable, even when the configured working
+directory is different.
 No Python build or source dependency is added to the ESAPI solution.
 
 The button passes four positional arguments: patient ID, open plan ID, plan
 DICOM UID, and Windows username, matching the standalone launcher. The Python
 GUI currently consumes the first three arguments. A patient and plan must be
 open; incomplete context, missing or invalid configuration, unavailable paths,
-and process-start failures produce an error dialog. The launch is asynchronous
-and does not save or modify the plan. The standalone launcher remains available
-for independent deployment.
+process-start failures, and nonzero exit codes produce an error dialog. The
+launch is asynchronous and does not save or modify the plan. The standalone
+launcher remains available for independent deployment.
 
 Build and deploy the updated main ESAPI plugin. On the licensed Eclipse 19.0
 workstation, confirm the button location and launch a commissioned test case;
-verify the patient/plan shown in preprocessing and `.env` loading from the
-working directory. Verify paths containing spaces, missing configuration,
-unavailable executable/working directory, and Windows denying process startup.
+verify the patient/plan shown in preprocessing and `.env` loading from beside
+the executable with a different working directory. Verify paths containing
+spaces, missing configuration, unavailable executable/working directory, and
+Windows denying process startup. On a test deployment, omit a required `.env`
+setting and verify that Eclipse reports the startup failure.
 The launch helper is tested offline through linked source, adding no new
 main-to-Core API references or standalone Core deployment requirement.
 

@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using USZ_ARTEMIS.Tools;
 using Xunit;
 
@@ -29,6 +31,24 @@ public sealed class PreprocessingLauncherTests : IDisposable
         Assert.Equal("\"SYNTHETIC 001\" \"Test Plan\" \"2.25.123\" \"test user\"", info.Arguments);
         Assert.False(info.UseShellExecute);
         Assert.True(info.CreateNoWindow);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task Returns_the_exit_code_even_when_the_process_exits_immediately(int exitCode)
+    {
+        bool isWindows = OperatingSystem.IsWindows();
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = isWindows ? Path.Combine(Environment.SystemDirectory, "cmd.exe") : "/bin/sh",
+            Arguments = isWindows ? $"/d /c exit {exitCode}" : $"-c \"exit {exitCode}\"",
+            WorkingDirectory = folder,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        Assert.Equal(exitCode, await PreprocessingLauncher.RunAsync(startInfo).WaitAsync(TimeSpan.FromSeconds(10)));
     }
 
     [Theory]
