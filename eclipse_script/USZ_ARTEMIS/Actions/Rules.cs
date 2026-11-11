@@ -360,7 +360,7 @@ namespace USZ_ARTEMIS.Actions
             popupForm.Height = 150;
 
             ComboBox comboBox = new ComboBox();
-            comboBox.Items.AddRange(new string[] { "Expand", "Subtract", "Add", "Intersect", "Create SBRT ring", "Create RectalWall" });
+            comboBox.Items.AddRange(new string[] { "Expand", "Subtract", "Add", "Intersect", "Create SBRT ring", "Create RectalWall", "Create CTV1" });
             comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             comboBox.Location = new System.Drawing.Point(30, 20);
             comboBox.Width = 200;
@@ -1063,6 +1063,33 @@ namespace USZ_ARTEMIS.Actions
             SaveRulesForPlan(SelectedPlan, ruleSet);
         }
 
+        public static void CreateCtv1(PlanSetup selectedPlan)
+        {
+            string targetId = SelectStructure(selectedPlan, "Target structure for CTV1", allowCustomName: true);
+            if (targetId == null)
+            {
+                return;
+            }
+
+            string error = Ctv1Rule.GetTargetIdError(targetId);
+            Structure existing = FindExistingStructure(selectedPlan.StructureSet, targetId);
+            if (error.Length == 0 && existing != null &&
+                !string.Equals(existing.DicomType, "CTV", StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"'{targetId}' must have Volume Type CTV to be used as the target.";
+            }
+
+            if (error.Length > 0)
+            {
+                MessageBox.Show(error, "Create CTV1", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var ruleSet = LoadRulesForPlan(selectedPlan);
+            ruleSet.Rules.Add(new StructureRule { Type = RuleType.Ctv1, OutputStructure = targetId });
+            SaveRulesForPlan(selectedPlan, ruleSet);
+        }
+
         // ----------------- VIEW / DELETE / EDIT -----------------
 
 
@@ -1190,6 +1217,8 @@ namespace USZ_ARTEMIS.Actions
                     }
                 case RuleType.RectalWall:
                     return "RectalWall_Ph = Automatic generation";
+                case RuleType.Ctv1:
+                    return $"Create CTV1 in {rule.OutputStructure} from Prostate and SeminalVesicle, with 10 mm closing saved to {Ctv1Rule.CleanedCtv}";
                 default:
                     return $"{rule.OutputStructure} = {rule.Type}";
             }
