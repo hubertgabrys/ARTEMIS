@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using USZ_ARTEMIS.Core.Rules;
 
@@ -35,6 +36,27 @@ namespace USZ_ARTEMIS.Actions
         {
             var inputs = new[] { Prostate, SeminalVesicle };
             return new RuleStructureUse(inputs, GetOutputIds(targetId), inputs);
+        }
+
+        public static int FindInsertionIndex(IReadOnlyList<RuleStructureUse> existingRules, string targetId)
+        {
+            RuleStructureUse ctv1 = GetStructureUse(targetId);
+            var outputIds = new HashSet<string>(ctv1.OutputIds, StringComparer.OrdinalIgnoreCase);
+            var inputIds = new HashSet<string>(ctv1.InputIds, StringComparer.OrdinalIgnoreCase);
+            int insertionIndex = 0;
+            while (insertionIndex < existingRules.Count &&
+                   !existingRules[insertionIndex].InputIds.Any(id => id != null && outputIds.Contains(id.Trim())))
+            {
+                insertionIndex++;
+            }
+
+            if (existingRules.Skip(insertionIndex).SelectMany(rule => rule.OutputIds)
+                .Any(id => id != null && inputIds.Contains(id.Trim())))
+            {
+                return -1;
+            }
+
+            return insertionIndex;
         }
     }
 }

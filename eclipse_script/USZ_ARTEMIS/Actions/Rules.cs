@@ -1086,7 +1086,19 @@ namespace USZ_ARTEMIS.Actions
             }
 
             var ruleSet = LoadRulesForPlan(selectedPlan);
-            ruleSet.Rules.Add(new StructureRule { Type = RuleType.Ctv1, OutputStructure = targetId });
+            int insertionIndex = Ctv1Rule.FindInsertionIndex(BuildOrderedRuleUses(ruleSet).ToList(), targetId);
+            if (insertionIndex < 0)
+            {
+                MessageBox.Show(
+                    "In Edit Rules, move rules that produce Prostate or SeminalVesicle above the first rule " +
+                    "that uses a Create CTV1 output, then add Create CTV1 again.",
+                    "Create CTV1",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            ruleSet.Rules.Insert(insertionIndex, new StructureRule { Type = RuleType.Ctv1, OutputStructure = targetId });
             SaveRulesForPlan(selectedPlan, ruleSet);
         }
 

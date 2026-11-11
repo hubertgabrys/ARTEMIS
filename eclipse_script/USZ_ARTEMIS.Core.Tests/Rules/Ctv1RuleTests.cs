@@ -31,4 +31,41 @@ public class Ctv1RuleTests
     {
         Assert.NotEmpty(Ctv1Rule.GetTargetIdError(targetId!));
     }
+
+    [Theory]
+    [InlineData(" ctv1 ")]
+    [InlineData("CTV1_clean")]
+    [InlineData("Prostate+1cm_Ph")]
+    [InlineData("SeminalVesicleBase1cm_Ph")]
+    public void InsertsAfterAnatomyProducerAndBeforeFirstOutputConsumer(string consumedOutput)
+    {
+        RuleStructureUse[] rules =
+        [
+            new(["ProstateRaw"], ["Prostate"]),
+            new(["Rectum", consumedOutput], ["Rectum"]),
+            new(["CTV1"], ["PTV1"])
+        ];
+
+        Assert.Equal(1, Ctv1Rule.FindInsertionIndex(rules, "CTV1"));
+    }
+
+    [Fact]
+    public void AppendsWhenNoExistingRuleUsesAnOutput()
+    {
+        RuleStructureUse[] rules = [new(["Rectum"], ["RectalWall_Ph"])];
+
+        Assert.Equal(1, Ctv1Rule.FindInsertionIndex(rules, "CTV1"));
+    }
+
+    [Fact]
+    public void RejectsInsertionWhenAnatomyIsProducedAfterAnOutputConsumer()
+    {
+        RuleStructureUse[] rules =
+        [
+            new(["CTV1"], ["PTV1"]),
+            new(["SeminalVesicleRaw"], [" seminalvesicle "])
+        ];
+
+        Assert.Equal(-1, Ctv1Rule.FindInsertionIndex(rules, "CTV1"));
+    }
 }
