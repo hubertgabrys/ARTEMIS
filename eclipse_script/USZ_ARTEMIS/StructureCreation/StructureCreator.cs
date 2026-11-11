@@ -41,7 +41,7 @@ namespace USZ_ARTEMIS.StructureCreation
         {
             string ringDicomType = "CONTROL";
             string ringId = StructureSettings.GetPtvRingId(ptv);
-            Color ringColor = StructureSettings.white;
+            Color ringColor = StructureSettings.magenta;
             warnings = new List<string>();
 
             // Set PTV ring thickness correctly
