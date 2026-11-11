@@ -21,6 +21,11 @@ namespace USZ_ARTEMIS.Configuration
             get { return Configuration.ErrorMessage; }
         }
 
+        public static string CouchConfiguration
+        {
+            get { return GetValue("CouchConfiguration", ""); }
+        }
+
         public static string PublishedScriptIconPath
         {
             get { return GetValue("PublishedScriptIconPath", @"\\YOUR-SERVER\YOUR-SHARE\ARTEMIS\PublishedScripts\Images\usz32.ico"); }

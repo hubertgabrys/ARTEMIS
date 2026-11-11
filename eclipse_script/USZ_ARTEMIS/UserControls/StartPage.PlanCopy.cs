@@ -5,6 +5,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using USZ_ARTEMIS.Core.Planning;
+using USZ_ARTEMIS.DataExtraction;
 using USZ_ARTEMIS.StructureCreation;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
@@ -420,7 +421,7 @@ namespace USZ_ARTEMIS
                 {
                     List<string> warnings;
                     StructureCreator.CreateCouchStructures(copiedPlan.StructureSet,
-                        "Exact_IGRT_Couch_Top_medium",
+                        CouchDataExtractor.IgrtMediumModelName,
                         true, out warnings);
                     if (warnings?.Count > 0)
                         warnings.ForEach(w => MessageBox.Show(w, "Warning", MessageBoxButton.OK, MessageBoxImage.Warning));

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using USZ_ARTEMIS.DataExtraction;
 using USZ_ARTEMIS.StructureCreation;
 using VMS.TPS.Common.Model.API;
 
@@ -243,7 +244,7 @@ namespace USZ_ARTEMIS
 
         private void BtnCouchStruct_Click(object sender, RoutedEventArgs e)
         {
-            const string selectedCouchModel = "Exact_IGRT_Couch_Top_medium";
+            const string selectedCouchModel = CouchDataExtractor.IgrtMediumModelName;
             List<string> warnings;
 
             try

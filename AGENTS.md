@@ -54,7 +54,7 @@ python -m pytest
 
 ## C# / ESAPI Development
 
-- The production target for `eclipse_script/` is Varian ESAPI 18.1. Compile and validate against the ESAPI 18.1 assemblies and installed Online Help on the licensed Windows workstation. Do not treat the ESAPI 17.0 reference archive as the target runtime.
+- The production target for `eclipse_script/` is Varian ESAPI 19.0. Compile and validate against the ESAPI 19.0 assemblies in `eclipse_script/ESAPI-19.0/` and installed Online Help on the licensed Windows workstation. Do not treat older ESAPI references as the target runtime.
 - Put ESAPI- and WPF-independent logic in `eclipse_script/USZ_ARTEMIS.Core/` and cover it in `USZ_ARTEMIS.Core.Tests/`.
 - Keep Varian, WPF, and Eclipse-dependent code in `eclipse_script/USZ_ARTEMIS/`. Do not add those references to the cross-platform core or offline test solution.
 
@@ -68,21 +68,20 @@ python -m pytest
 
 ### Using the Local ESAPI References
 
-The repository-local, read-only references are under `reference/` (singular). Read each directory's `README.md` before relying on it.
+The repository-local, read-only references are under `eclipse_script/reference/`. Read each directory's `AGENTS.md` or `README.md` before relying on it.
 
-- Use `reference/esapi-docs-17.0/catalog.jsonl` to locate exact ESAPI 17.0 type names, member names, UIDs, assemblies, and signatures. Then open the matching file under `reference/esapi-docs-17.0/docs/` for declarations, remarks, parameters, return values, exceptions, and inherited members.
-- Use `reference/esapi-guide-18.1/` for ESAPI/Eclipse compatibility, upgrade guidance, scripting and deployment workflows, Plan Checker behavior, and the selected 18.1 additions documented by the vendor guide. Start with its `README.md`, then follow the topic files it indexes.
-- Use the two sources together: treat the 17.0 archive as the exact 17.0 baseline and the 18.1 guide as a documented-differences overlay. The guide contains selected 18.1 additions and 18.0 compatibility and assembly-version metadata, but not a complete 17.0-to-18.0 delta or a complete member-level 18.1 reference.
+- Use `eclipse_script/reference/esapi-19/symbols.tsv` to locate ESAPI 19.0 types, members, enum values, and their reference files. Open the matching `API/<Type>.md` or `Types/<Type>.md` for exact declarations, parameters, return values, and remarks.
+- Use `eclipse_script/reference/esapi-19/guide/02-eclipse-scripting-api.md` for compatibility, assembly versions, upgrade instructions, and the 19.0 breaking changes. The other guide chapters cover scripting, automation, and deployment workflows.
 - Search from the repository root instead of scanning the whole archive manually. For example:
 
 ```bash
-rg -n 'GetDVHCumulativeData|PlanSetup' reference/esapi-docs-17.0/catalog.jsonl
-rg -n 'GetDVHCumulativeData' reference/esapi-docs-17.0/docs
-rg -n 'Plan Checker|Department' reference/esapi-guide-18.1
+rg -n 'GetDVHCumulativeData|PlanSetup' eclipse_script/reference/esapi-19/symbols.tsv
+rg -n 'AddCouchStructures' eclipse_script/reference/esapi-19/API/StructureSet.md
+rg -n 'Breaking Changes|Plan Checker' eclipse_script/reference/esapi-19/guide
 ```
 
-- Keep the version boundary explicit in reasoning and handoff notes. The 17.0 archive is authoritative only for ESAPI 17.0, while the 18.1 guide is a curated overlay rather than a complete member-level reference.
-- Do not guess that a 17.0 signature is unchanged in 18.1 or implement a new 18.1 member from a guide summary alone. Verify exact 18.1 signatures and behavior against the installed ESAPI 18.1 Online Help and assemblies on the licensed Windows workstation; if that is unavailable, state the uncertainty and required verification.
+- Keep the version boundary explicit in reasoning and handoff notes. The 19.0 API reference supplies member-level declarations; guide examples can retain older signatures, so prefer the member reference and supplied 19.0 assemblies when they differ.
+- Do not guess undocumented configuration names or dictionary keys. Verify exact signatures and behavior against the ESAPI 19.0 reference and assemblies, and validate clinical behavior on the licensed Eclipse 19.0 workstation; if that is unavailable, state the uncertainty and required verification.
 - Treat source links, version labels, and printed guide page references in these files as provenance. Cite the specific local reference and version when it materially informs an implementation decision.
 - Do not modify, regenerate, redistribute, or add files under `reference/` as part of normal feature work. These references inform implementation but do not replace compilation against the intended assemblies, Eclipse integration tests, commissioning, or clinical validation.
 

@@ -20,11 +20,15 @@ beside the deployed launcher script and set the executable path and working dire
 
 ## Full ESAPI Project
 
-The production target is Varian ESAPI 18.1. Build
-`eclipse_script/USZ_ARTEMIS.sln` against the ESAPI 18.1 assemblies in Visual
+The production target is Varian ESAPI 19.0. Build
+`eclipse_script/USZ_ARTEMIS.sln` against the ESAPI 19.0 assemblies in
+`eclipse_script/ESAPI-19.0/` using Visual
 Studio on the licensed Windows workstation.
 
-Deploy the generated ESAPI plugin to the Varian Published Scripts folder.
+Deploy the generated `USZ_ARTEMIS_v26.10.26.1.esapi.dll` to the Varian Published
+Scripts folder. Follow the [ESAPI 19.0 migration and validation notes](../eclipse_script/README.md),
+including the local `CouchConfiguration` setting and verification of couch
+geometry and HU values in Eclipse 19.0.
 
 The production Costura configuration embeds `USZ_ARTEMIS.Core` in the generated
 ESAPI plugin. When Core changes, rebuild the full solution before deployment so
