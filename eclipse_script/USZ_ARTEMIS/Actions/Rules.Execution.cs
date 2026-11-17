@@ -35,16 +35,16 @@ namespace USZ_ARTEMIS.Actions
 
             var ruleSet = LoadRulesFromPath(path, targetPlan);
             StructureSet structureSet = targetPlan.StructureSet;
-            var ctv1Rules = ruleSet.Rules.Where(rule => rule.Type == RuleType.Ctv1).ToList();
-            // CTV1 outputs are updated in place to preserve their structure metadata.
-            var ctv1OutputIds = new HashSet<string>(
-                ctv1Rules.SelectMany(rule => Ctv1Rule.GetOutputIds(rule.OutputStructure?.Trim())),
+            var ctvRules = ruleSet.Rules.Where(rule => GetCtvCreationRule(rule.Type) != null).ToList();
+            // CTV creation outputs are updated in place to preserve their structure metadata.
+            var ctvOutputIds = new HashSet<string>(
+                ctvRules.SelectMany(rule => GetCtvCreationRule(rule.Type).GetOutputIds(rule.OutputStructure)),
                 StringComparer.OrdinalIgnoreCase);
             var toDelete = structureSet.Structures
                 .Where(s =>
                     !string.IsNullOrWhiteSpace(s.Id) &&
                     s.Id.EndsWith("_ph", StringComparison.OrdinalIgnoreCase) &&
-                    !ctv1OutputIds.Contains(s.Id.Trim()) &&
+                    !ctvOutputIds.Contains(s.Id.Trim()) &&
                     !(
                         (s.Id.StartsWith("ptv", StringComparison.OrdinalIgnoreCase)
                          && s.Id.EndsWith("+2cm_ph", StringComparison.OrdinalIgnoreCase))
@@ -105,9 +105,9 @@ namespace USZ_ARTEMIS.Actions
 
             try
             {
-                foreach (var rule in ctv1Rules)
+                foreach (var rule in ctvRules)
                 {
-                    string error = Ctv1Rule.GetTargetIdError(rule.OutputStructure);
+                    string error = GetCtvCreationRule(rule.Type).GetTargetIdError(rule.OutputStructure);
                     if (error.Length > 0)
                     {
                         throw new InvalidOperationException(error);
@@ -130,7 +130,14 @@ namespace USZ_ARTEMIS.Actions
                 foreach (var rule in ruleSet.Rules)
                 {
                     string outputId = rule.OutputStructure;
-                    if (rule.Type != RuleType.Ctv1 && !string.IsNullOrEmpty(outputId))
+                    CtvCreationRule ctv = GetCtvCreationRule(rule.Type);
+                    if (ctv != null)
+                    {
+                        ApplyCtv(targetPlan, outputId, ctv);
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(outputId))
                     {
                         var outStruct = FindExistingStructure(
                             targetPlan.StructureSet,
@@ -195,10 +202,6 @@ namespace USZ_ARTEMIS.Actions
 
                         case RuleType.RectalWall:
                             ApplyRectalWall(targetPlan);
-                            break;
-
-                        case RuleType.Ctv1:
-                            ApplyCtv1(targetPlan, outputId.Trim());
                             break;
                     }
                 }
@@ -508,21 +511,20 @@ namespace USZ_ARTEMIS.Actions
             SelectedPlan.StructureSet.RemoveStructure(rectalWallHelp);
         }
 
-        private static void ApplyCtv1(PlanSetup selectedPlan, string targetId)
+        private static void ApplyCtv(PlanSetup selectedPlan, string targetId, CtvCreationRule rule)
         {
-            const double marginMm = 10;
             StructureSet structureSet = selectedPlan.StructureSet;
-            Structure prostate = FindRequiredInputStructure(selectedPlan, Ctv1Rule.Prostate);
-            Structure seminalVesicle = FindRequiredInputStructure(selectedPlan, Ctv1Rule.SeminalVesicle);
+            Structure prostate = FindRequiredInputStructure(selectedPlan, CtvCreationRule.Prostate);
+            Structure seminalVesicle = FindRequiredInputStructure(selectedPlan, CtvCreationRule.SeminalVesicle);
             foreach (Structure input in new[] { prostate, seminalVesicle })
             {
                 if (input.IsEmpty)
                 {
-                    throw new InvalidOperationException($"Create CTV1 requires geometry in '{input.Id}'.");
+                    throw new InvalidOperationException($"{rule.Name} requires geometry in '{input.Id}'.");
                 }
             }
 
-            var outputs = Ctv1Rule.GetOutputIds(targetId)
+            var outputs = rule.GetOutputIds(targetId)
                 .Select((id, index) => (
                     Id: id,
                     Type: index < 2 ? "CONTROL" : "CTV",
@@ -548,12 +550,12 @@ namespace USZ_ARTEMIS.Actions
 
                 if (existing.IsApproved)
                 {
-                    throw new InvalidOperationException($"Create CTV1 cannot update approved structure '{existing.Id}'.");
+                    throw new InvalidOperationException($"{rule.Name} cannot update approved structure '{existing.Id}'.");
                 }
 
                 if (!existing.CanEditSegmentVolume(out string error))
                 {
-                    throw new InvalidOperationException($"Create CTV1 cannot edit '{existing.Id}': {error}");
+                    throw new InvalidOperationException($"{rule.Name} cannot edit '{existing.Id}': {error}");
                 }
             }
 
@@ -562,13 +564,15 @@ namespace USZ_ARTEMIS.Actions
             var temporaryStructures = new List<Structure>();
             try
             {
-                SegmentVolume prostateVolume = GetCtv1InputVolume(structureSet, prostate, useHighResolution, temporaryStructures);
-                SegmentVolume seminalVesicleVolume = GetCtv1InputVolume(structureSet, seminalVesicle, useHighResolution, temporaryStructures);
-                var margins = new AxisAlignedMargins(StructureMarginGeometry.Outer, 0, 0, 0, 0, marginMm, marginMm);
+                SegmentVolume prostateVolume = GetCtvInputVolume(structureSet, prostate, useHighResolution, temporaryStructures);
+                SegmentVolume seminalVesicleVolume = GetCtvInputVolume(structureSet, seminalVesicle, useHighResolution, temporaryStructures);
+                var margins = new AxisAlignedMargins(
+                    StructureMarginGeometry.Outer, 0, 0, 0, 0, rule.ExpansionMm, rule.ExpansionMm);
                 SegmentVolume expandedProstate = prostateVolume.AsymmetricMargin(margins);
                 SegmentVolume seminalVesicleBase = expandedProstate.And(seminalVesicleVolume);
                 SegmentVolume ctv = prostateVolume.Or(seminalVesicleBase);
-                SegmentVolume cleanedCtv = ctv.Margin(marginMm).Margin(-marginMm);
+                SegmentVolume cleanedCtv = ctv.Margin(CtvCreationRule.ClosingMarginMm)
+                    .Margin(-CtvCreationRule.ClosingMarginMm);
                 var volumes = new[] { expandedProstate, seminalVesicleBase, ctv, cleanedCtv };
 
                 var structures = outputs.Select(output =>
@@ -577,7 +581,7 @@ namespace USZ_ARTEMIS.Actions
                 {
                     foreach (Structure structure in structures)
                     {
-                        ConvertCtv1StructureToHighResolution(structure);
+                        ConvertCtvStructureToHighResolution(structure);
                     }
                 }
 
@@ -588,7 +592,7 @@ namespace USZ_ARTEMIS.Actions
 
                 if (structures[2].IsEmpty || structures[3].IsEmpty)
                 {
-                    throw new InvalidOperationException("Create CTV1 produced an empty target or cleaned contour.");
+                    throw new InvalidOperationException($"{rule.Name} produced an empty target or closed contour.");
                 }
             }
             finally
@@ -600,7 +604,7 @@ namespace USZ_ARTEMIS.Actions
             }
         }
 
-        private static SegmentVolume GetCtv1InputVolume(
+        private static SegmentVolume GetCtvInputVolume(
             StructureSet structureSet, Structure source, bool useHighResolution, ICollection<Structure> temporaryStructures)
         {
             if (!useHighResolution || source.IsHighResolution)
@@ -609,15 +613,15 @@ namespace USZ_ARTEMIS.Actions
             }
 
             // Match the Boolean operands' resolutions without modifying the source contour.
-            string temporaryId = "Ctv1_" + Guid.NewGuid().ToString("N").Substring(0, 10);
+            string temporaryId = "Ctv_" + Guid.NewGuid().ToString("N").Substring(0, 10);
             Structure copy = structureSet.AddStructure("CONTROL", temporaryId);
             temporaryStructures.Add(copy);
             copy.SegmentVolume = source.SegmentVolume;
-            ConvertCtv1StructureToHighResolution(copy);
+            ConvertCtvStructureToHighResolution(copy);
             return copy.SegmentVolume;
         }
 
-        private static void ConvertCtv1StructureToHighResolution(Structure structure)
+        private static void ConvertCtvStructureToHighResolution(Structure structure)
         {
             if (!structure.IsHighResolution && structure.CanConvertToHighResolution())
             {
@@ -626,7 +630,7 @@ namespace USZ_ARTEMIS.Actions
 
             if (!structure.IsHighResolution)
             {
-                throw new InvalidOperationException($"Create CTV1 could not convert '{structure.Id}' to high resolution.");
+                throw new InvalidOperationException($"Could not convert '{structure.Id}' to high resolution during CTV creation.");
             }
         }
 
