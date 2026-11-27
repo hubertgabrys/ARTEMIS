@@ -370,7 +370,30 @@ namespace USZ_ARTEMIS
                 return;
             }
 
+            string materialTableWarning = Tools.PlanCopyMaterialTable.CheckCompatibility(
+                newStructureSet.GetPhysicalMaterialTable,
+                newStructureSet.CanUsePhysicalMaterialTable);
+
             var copiedPlan = originalPlan.Course.CopyPlanSetup(originalPlan, newStructureSet, null);
+
+            if (string.IsNullOrEmpty(materialTableWarning))
+            {
+                materialTableWarning = Tools.PlanCopyMaterialTable.Assign(
+                    copiedPlan.StructureSet.GetPhysicalMaterialTable,
+                    copiedPlan.StructureSet.SetPhysicalMaterialTable);
+            }
+
+            if (!string.IsNullOrEmpty(materialTableWarning))
+            {
+                MessageBox.Show(
+                    $"ARTEMIS could not automatically confirm physical material table " +
+                    $"'{Tools.PlanCopyMaterialTable.TableName}' on the destination structure set.\n\n" +
+                    "Plan copying will continue. Please assign or verify this table manually " +
+                    "in Eclipse before dose calculation.\n\n" + materialTableWarning,
+                    "Physical Material Table Warning",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
 
             string fractionSuffix = cb_FractionLetter.Text;
             PlanCopyNames copyNames = PlanCopyNames.Create(originalPlan.Id, originalPlan.Name, fractionSuffix);
@@ -661,6 +684,26 @@ namespace USZ_ARTEMIS
                 MessageBox.Show("NTO objectives not set. Please set them manually to: 150, 0.5 mm, 100%, 30%, 0.3 fall-of.", "Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+            }
+
+            var structureReminders = Tools.PlanCopyStructureReminders.Create(
+                copiedPlan.StructureSet.Structures.Select(structure => structure.Id));
+            if (!string.IsNullOrEmpty(structureReminders.AvoidEntryDoseReminder))
+            {
+                MessageBox.Show(
+                    structureReminders.AvoidEntryDoseReminder,
+                    "Plan Optimization Reminder",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+
+            if (!string.IsNullOrEmpty(structureReminders.MaterialOverrideReminder))
+            {
+                MessageBox.Show(
+                    structureReminders.MaterialOverrideReminder,
+                    "Manual Material Override Verification Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
 
             MessageBox.Show("Success!");

@@ -114,15 +114,24 @@
                       ShowsPreview="True"
                       Background="#22000000"/>
 
-        <!-- MIDDLE PANEL: Plan Adaptation above QA buttons -->
+        <!-- MIDDLE PANEL: preprocessing, Plan Adaptation, and QA -->
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
+            <GroupBox Header="Preprocessing" Grid.Row="0">
+                <Button x:Name="btnLaunchPreprocessing"
+                        Content="Launch preprocessing script"
+                        Click="BtnLaunchPreprocessing_Click"
+                        ToolTip="Start ARTEMIS preprocessing for the patient and plan open in Eclipse."
+                        Margin="0"/>
+            </GroupBox>
+
             <!-- Plan Adaptation -->
-            <GroupBox Header="Plan Adaptation" Grid.Row="0">
+            <GroupBox Header="Plan Adaptation" Grid.Row="1">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -181,7 +190,7 @@
             </GroupBox>
 
             <!-- QA (buttons only now) -->
-            <GroupBox Header="QA" Grid.Row="1">
+            <GroupBox Header="QA" Grid.Row="2">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>

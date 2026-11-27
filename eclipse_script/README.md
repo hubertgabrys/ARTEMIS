@@ -27,8 +27,8 @@ USZ_ARTEMIS.Core.Tests -> USZ_ARTEMIS.Core
 `USZ_ARTEMIS` and `USZ_ARTEMIS.Core.Tests` must not reference each other. The C#
 namespaces and ESAPI entry point remain stable. The production target is
 ESAPI 19.0 / Eclipse 19.0, .NET Framework 4.8, and x64. The current plugin is
-`USZ_ARTEMIS_v26.10.26.1.esapi.dll`, with assembly, file, and informational
-version `26.10.26.1`.
+`USZ_ARTEMIS_v26.11.11.0.esapi.dll`, with assembly, file, and informational
+version `26.11.11.0`.
 
 ## Required Local Files
 
@@ -71,6 +71,67 @@ If the initial replacement fails after removing an existing couch, the error
 explicitly instructs the user to discard the modifications; that original
 couch is not automatically restored by the initial creation path.
 
+## Preprocessing launcher
+
+The **Launch preprocessing** button above **Plan Adaptation** starts the
+separately deployed Python executable. Set `PreprocessingExecutablePath` and
+`PreprocessingWorkingDirectory` to absolute paths in `USZ_ARTEMIS.esapi.json`
+(or the configuration selected by `USZ_ARTEMIS_APP_PATHS`). Use the existing
+standalone launcher's `ExecutablePath` and `WorkingDirectory` values when
+migrating. Keep `.env` beside the executable, even when the configured working
+directory is different.
+No Python build or source dependency is added to the ESAPI solution.
+
+The button passes four positional arguments: patient ID, open plan ID, plan
+DICOM UID, and Windows username, matching the standalone launcher. The Python
+GUI currently consumes the first three arguments. A patient and plan must be
+open; incomplete context, missing or invalid configuration, unavailable paths,
+process-start failures, and nonzero exit codes produce an error dialog. The
+launch is asynchronous and does not save or modify the plan. The standalone
+launcher remains available for independent deployment.
+
+Build and deploy the updated main ESAPI plugin. On the licensed Eclipse 19.0
+workstation, confirm the button location and launch a commissioned test case;
+verify the patient/plan shown in preprocessing and `.env` loading from beside
+the executable with a different working directory. Verify paths containing
+spaces, missing configuration, unavailable executable/working directory, and
+Windows denying process startup. On a test deployment, omit a required `.env`
+setting and verify that Eclipse reports the startup failure.
+The launch helper is tested offline through linked source, adding no new
+main-to-Core API references or standalone Core deployment requirement.
+
+## Plan copying
+
+Plan copying checks whether the destination structure set can use physical
+material table `AcurosXB-13.5`, assigns it immediately after copying, and reads
+it back. An already assigned matching table is left in place. If the check,
+assignment, or verification fails, ARTEMIS shows a warning and continues plan
+copying; assign or verify the table manually in Eclipse before dose calculation.
+This setting belongs to the destination structure set and therefore also affects
+other plans sharing it. It does not select the plan's dose-calculation model.
+The implementation uses the ESAPI 19.0
+[physical material table methods](reference/esapi-19/API/StructureSet.md#canusephysicalmaterialtable).
+
+After copying optimization objectives, an information dialog reminds the planner
+to manually enable **Avoid entry dose** for `OR_Hip_Water_Ph` when that structure
+is present in the destination structure set, including when it is empty.
+For present structures, a separate warning requires manual verification that
+`OR_Hip_Water` and `OR_Hip_Water_Ph` have material override **Water**, and
+`HighDensity_Ph` has material override **Titanium Alloy**, before optimization
+or dose calculation. Absent structures do not produce reminders.
+
+These named material overrides cannot be read through the public ESAPI 19.0
+`Structure` API, as checked against the supplied 19.0 assembly and
+[Structure reference](reference/esapi-19/API/Structure.md#getassignedhu).
+HU overrides and the structure set's physical material table do not confirm
+the named material assignment. ARTEMIS therefore requests manual verification
+and does not report these overrides as automatically verified or change them.
+The reminder logic is tested offline through linked source and adds no new
+main-to-Core references. Rebuild and deploy the main ESAPI assembly, then verify
+the information and warning dialogs on Eclipse 19.0 with each target structure
+present and absent, both Water structure IDs present, an empty target structure,
+and correct, missing, or incorrect named material overrides.
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and
@@ -94,6 +155,10 @@ Before clinical deployment, validate on the licensed Eclipse 19.0 workstation:
   assignment failures. If cleanup or restoration fails, discard the changes.
 - Exercise plan copying, structure creation and metadata rules, clinical-goal
   evaluation, and QA/reporting against commissioned test cases.
+- Verify automatic material table assignment, an already matching table, and
+  warning-only continuation when the table is unavailable or assignment fails.
+  Confirm `AcurosXB-13.5` is commissioned for the intended workflow and that
+  other plans sharing the destination structure set are accounted for.
 - Deploy the rebuilt main plugin, remove stale standalone `USZ_ARTEMIS.Core.dll`
   copies, restart Eclipse, and confirm the displayed version. Core remains
   embedded through Costura; this migration adds no main-to-Core API references.
