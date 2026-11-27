@@ -526,6 +526,7 @@ def main():
 
     automation_state = {
         "active": False,
+        "accela_adaptation": False,
         "job": None,
         "base_plan_in_progress": False,
         "refresh_in_progress": False,
@@ -562,6 +563,7 @@ def main():
         settings_state = tk.DISABLED if active else tk.NORMAL
         chk_auto_approve.config(state=settings_state)
         chk_propagate_ptvs.config(state=settings_state)
+        chk_accela_adaptation.config(state=settings_state)
         if active:
             btn_automation.config(text="STOP", state=tk.NORMAL)
             automation_status.config(text="Running")
@@ -605,7 +607,8 @@ def main():
             automation_log(f"Detected {len(new_imaging)} new imaging series.")
         automation_state["known_imaging_uids"].update(imaging_now)
 
-        if not automation_state["registration_attempted"]:
+        accela_adaptation = automation_state["accela_adaptation"]
+        if not accela_adaptation and not automation_state["registration_attempted"]:
             automation_log("Imaging available. Starting registration.")
             automation_state["registration_attempted"] = True
             automation_state["registration_completed"] = False
@@ -630,49 +633,34 @@ def main():
             schedule_automation_next()
             return
 
-        if not automation_state["registration_completed"]:
+        if not accela_adaptation and not automation_state["registration_completed"]:
             schedule_automation_next()
             return
 
-        unsent_imaging = (
+        selected_uids = (
             imaging_now
             - automation_state["sent_series_uids"]
             - aria_blocked_series_uids
             - aria_refresh_required_uids
         )
 
-        unavailable_imaging_uids = (
-            aria_blocked_series_uids | aria_refresh_required_uids
-        )
-        reg_uids = {
-            uid
-            for uid, info in series_info.items()
-            if info.get("modality") == "REG"
-            and not (
-                set(info.get("references", []) or [])
-                & unavailable_imaging_uids
-            )
-        }
+        if not accela_adaptation and automation_state["registration_successful"]:
+            unavailable_imaging_uids = aria_blocked_series_uids | aria_refresh_required_uids
+            reg_uids = {
+                uid
+                for uid, info in series_info.items()
+                if info.get("modality") == "REG"
+                and not (set(info.get("references", []) or []) & unavailable_imaging_uids)
+            }
+            selected_uids.update(reg_uids - automation_state["sent_series_uids"])
 
-        if automation_state["registration_successful"]:
-            unsent_regs = reg_uids - automation_state["sent_series_uids"]
-        else:
-            unsent_regs = set()
-
-        if unsent_imaging or unsent_regs:
-            selected_uids = set(unsent_imaging) | set(unsent_regs)
-            automation_log(
-                "Sending series to Aria: "
-                + ", ".join(sorted(selected_uids))
-                if selected_uids
-                else "Sending series to Aria."
-            )
+        if selected_uids:
+            automation_log("Sending series to Aria: " + ", ".join(sorted(selected_uids)))
             on_send_to_aria(
                 selected_uids=selected_uids,
                 triggered_by_automation=True,
+                include_referenced_structures=not accela_adaptation,
             )
-            schedule_automation_next()
-            return
 
         schedule_automation_next()
 
@@ -697,6 +685,7 @@ def main():
         if automation_state["active"] or automation_busy():
             return
         automation_state["active"] = True
+        automation_state["accela_adaptation"] = accela_adaptation_var.get()
         automation_state["registration_attempted"] = False
         automation_state["registration_completed"] = False
         automation_state["registration_successful"] = False
@@ -706,6 +695,8 @@ def main():
         automation_state["base_plan_in_progress"] = True
         update_automation_controls()
         automation_log("Starting full automation workflow.")
+        if automation_state["accela_adaptation"]:
+            automation_log("Accela adaptation enabled. Sending imaging only.")
 
         def base_plan_finished() -> None:
             automation_state["base_plan_in_progress"] = False
@@ -762,6 +753,14 @@ def main():
         variable=propagate_ptvs_var,
     )
     chk_propagate_ptvs.pack(anchor="w")
+
+    accela_adaptation_var = tk.BooleanVar(value=False)
+    chk_accela_adaptation = tk.Checkbutton(
+        settings_frame,
+        text="Accela adaptation",
+        variable=accela_adaptation_var,
+    )
+    chk_accela_adaptation.pack(anchor="w")
 
     # Get Base Plan button with status label
     baseplan_status = tk.Label(fetch_actions, text="", font=("Helvetica", 14))
@@ -1417,26 +1416,24 @@ def main():
     sent_tree.column("files", width=80, anchor="e")
     sent_tree.column("sent_at", width=140, anchor="w")
 
-    def _sent_file_count(uid: str) -> int:
+    def _sent_file_count(uid: str, sent_references: dict[str, list[str]]) -> int:
         info = series_info.get(uid, {})
         count = len(info.get("files", []))
         if info.get("modality") in ("RTSTRUCT", "REG"):
             return count
-        for ref_uid in references_map.get(uid, []):
+        for ref_uid in sent_references.get(uid, []):
             ref_info = series_info.get(ref_uid, {})
             count += len(ref_info.get("files", []))
         return count
 
-    def _update_sent_list(uids: set[str]) -> None:
+    def _update_sent_list(uids: set[str], sent_references: dict[str, list[str]]) -> None:
         sent_time = get_datetime()
-        expanded_uids = set(uids)
-        for uid in list(uids):
-            expanded_uids.update(references_map.get(uid, []))
+        expanded_uids = uids.union(*sent_references.values())
         for uid in sorted(expanded_uids):
             info = series_info.get(uid, {})
             series_label = checkbox_texts.get(uid, info.get("description", uid))
             modality = info.get("modality", "")
-            file_count = _sent_file_count(uid)
+            file_count = _sent_file_count(uid, sent_references)
             sent_info[uid] = {
                 "label": series_label,
                 "modality": modality,
@@ -1449,7 +1446,12 @@ def main():
             else:
                 sent_tree.insert("", "end", iid=uid, values=values)
 
-    def on_send_to_aria(selected_uids=None, triggered_by_automation: bool = False):
+    def on_send_to_aria(
+        selected_uids=None,
+        triggered_by_automation: bool = False,
+        *,
+        include_referenced_structures: bool = True,
+    ):
         """Send selected series to Aria and track automation-related selections."""
 
         print(f"{get_datetime()} Sending to Aria {input_dir}...")
@@ -1501,11 +1503,16 @@ def main():
         if not target_set:
             return
 
+        sent_references = (
+            {uid: references_map.get(uid, []) for uid in target_set}
+            if include_referenced_structures
+            else {}
+        )
         selected_files = []
         for uid in target_set:
             info = series_info.get(uid, {})
             selected_files.extend(info.get("files", []))
-            for rs_uid in references_map.get(uid, []):
+            for rs_uid in sent_references.get(uid, []):
                 rs_info = series_info.get(rs_uid, {})
                 selected_files.extend(rs_info.get("files", []))
 
@@ -1569,7 +1576,7 @@ def main():
             end_time = time.time()
             if result.get("success"):
                 send_status.config(text="\u2705", fg="green")
-                _update_sent_list(target_set)
+                _update_sent_list(target_set, sent_references)
                 if triggered_by_automation:
                     automation_log("Files sent to Aria successfully.")
                 else:
@@ -1592,10 +1599,7 @@ def main():
                 automation_state["sending_in_progress"] = False
                 if result.get("success"):
                     pending = automation_state.get("pending_send_uids", set())
-                    automation_state["sent_series_uids"].update(pending)
-                    for uid in list(pending):
-                        for rs_uid in references_map.get(uid, []):
-                            automation_state["sent_series_uids"].add(rs_uid)
+                    automation_state["sent_series_uids"].update(pending, *sent_references.values())
                 automation_state["pending_send_uids"] = set()
                 update_automation_controls()
 

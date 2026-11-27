@@ -3,6 +3,7 @@ import threading
 import tkinter as tk
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from tkinter import ttk
 from types import SimpleNamespace
 
 import pytest
@@ -52,19 +53,21 @@ def workflow(monkeypatch, tmp_path):
     base_dir.mkdir(parents=True)
     daily_file = str(daily_dir / "example-mr.dcm")
 
+    daily_series = {
+        "1.2.4": {
+            "modality": "MR", "description": "Example MR",
+            "date": "", "time": "", "files": [daily_file],
+        },
+        "1.2.5": {
+            "modality": "RTSTRUCT", "description": "Example structures",
+            "date": "", "time": "", "files": [], "references": ["1.2.4"],
+        },
+    }
+
     def list_series(directory):
         if directory == str(base_dir):
             return {"1.2.3": {"modality": "CT"}}
-        return {
-            "1.2.4": {
-                "modality": "MR", "description": "Example MR",
-                "date": "", "time": "", "files": [daily_file],
-            },
-            "1.2.5": {
-                "modality": "RTSTRUCT", "description": "Example structures",
-                "date": "", "time": "", "files": [], "references": ["1.2.4"],
-            },
-        }
+        return daily_series.copy()
 
     monkeypatch.setattr(
         app,
@@ -114,6 +117,8 @@ def workflow(monkeypatch, tmp_path):
             run_timer=run_timer,
             base_plan_requests=base_plan_requests,
             daily_file=daily_file,
+            daily_series=daily_series,
+            sent_tree=next(item for item in descendants(root) if isinstance(item, ttk.Treeview)),
         )
     finally:
         root.destroy()
@@ -122,7 +127,7 @@ def workflow(monkeypatch, tmp_path):
 def test_workflow_sections_and_stop_during_base_plan_fetch(workflow):
     assert list(workflow.sections) == ["Settings", "Full automation", "Manual workflow"]
     assert [item.cget("text") for item in workflow.settings] == [
-        "Automatic registration approval", "Propagate PTVs (WARP study)"
+        "Automatic registration approval", "Propagate PTVs (WARP study)", "Accela adaptation"
     ]
     manual_widgets = list(descendants(workflow.sections["Manual workflow"]))
     assert {item.cget("text") for item in manual_widgets if isinstance(item, tk.Button)} == {
@@ -223,6 +228,8 @@ def test_stopped_registration_keeps_its_propagation_setting(workflow, monkeypatc
 
 def test_stop_during_send_waits_for_the_transfer_to_finish(workflow, monkeypatch):
     transfers = []
+    workflow.daily_series["1.2.5"]["files"] = ["example-structures.dcm"]
+    monkeypatch.setattr(app, "_is_placeholder_rtstruct", lambda _: False)
 
     def send_files(files, progress_callback):
         transfers.append(files)
@@ -249,7 +256,63 @@ def test_stop_during_send_waits_for_the_transfer_to_finish(workflow, monkeypatch
     workflow.workers.pop(0)()
     workflow.run_timer(100)
 
-    assert transfers == [[workflow.daily_file]]
+    assert transfers == [[workflow.daily_file, "example-structures.dcm"]]
+    assert set(workflow.sent_tree.get_children()) == {"1.2.4", "1.2.5"}
     assert workflow.status.cget("text") == "Stopped"
     assert workflow.button.cget("state") == tk.NORMAL
     assert all(delay != 5000 for delay, _ in workflow.timers.values())
+
+
+def test_accela_preprocesses_and_sends_only_new_imaging(workflow, monkeypatch):
+    events = []
+
+    def send_files(files, progress_callback):
+        events.append(list(files))
+        return True
+
+    def unexpected_registration(*args, **kwargs):
+        pytest.fail("Accela automation attempted registration or contour propagation")
+
+    monkeypatch.setattr(app, "perform_registration", unexpected_registration)
+    monkeypatch.setattr(app, "_copy_structures_and_crop", unexpected_registration)
+    monkeypatch.setattr(app, "send_files_to_aria", send_files)
+    monkeypatch.setattr(app, "_is_placeholder_rtstruct", lambda _: False)
+    monkeypatch.setattr(
+        app, "resample_mr_series_by_description", lambda *_, **__: events.append("preprocessed")
+    )
+    workflow.daily_series["1.2.5"]["files"] = ["example-structures.dcm"]
+    workflow.daily_series["1.2.6"] = {
+        "modality": "REG", "description": "Existing registration", "date": "", "time": "",
+        "files": ["example-registration.dcm"], "references": ["1.2.4"],
+    }
+    for setting in workflow.settings:
+        setting.invoke()
+
+    workflow.button.invoke()
+    workflow.workers.pop(0)()  # base plan
+    workflow.workers.pop(0)()  # imaging
+    workflow.workers.pop(0)()  # transfer
+    workflow.run_timer(100)
+    assert events == ["preprocessed", [workflow.daily_file]]
+    assert workflow.base_plan_requests == [("DEMO", "Example", "1.2.1")]
+    assert workflow.sent_tree.get_children() == ("1.2.4",)
+    assert workflow.sent_tree.set("1.2.4", "files") == "1"
+
+    workflow.workers.pop(0)()  # refresh after transfer
+    workflow.run_timer(5000)
+    workflow.workers.pop(0)()  # unchanged imaging
+    assert not workflow.workers
+
+    workflow.daily_series["1.2.7"] = {
+        **workflow.daily_series["1.2.4"], "files": ["example-new-mr.dcm"],
+    }
+    workflow.daily_series["1.2.5"]["references"].append("1.2.7")
+    workflow.run_timer(5000)
+    workflow.workers.pop(0)()  # newly available imaging
+    workflow.workers.pop(0)()  # second transfer
+    workflow.run_timer(100)
+
+    assert [event for event in events if isinstance(event, list)] == [
+        [workflow.daily_file], ["example-new-mr.dcm"],
+    ]
+    assert set(workflow.sent_tree.get_children()) == {"1.2.4", "1.2.7"}
