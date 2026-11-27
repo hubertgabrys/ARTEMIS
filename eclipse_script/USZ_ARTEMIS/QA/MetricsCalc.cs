@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using USZ_ARTEMIS.Core.QA;
 using VMS.TPS.Common.Model.API;
 
 namespace USZ_ARTEMIS.QA
@@ -40,9 +41,16 @@ namespace USZ_ARTEMIS.QA
             // Loop over the beams
             for (int iBeam = 0; iBeam < NTherapyBeams; iBeam++)
             {
-                // Get the control points collection
-                ControlPointCollection temp_ControlPoints = null;
-                temp_ControlPoints = therapyBeams[iBeam].ControlPoints;
+                Beam beam = therapyBeams[iBeam];
+                ControlPointCollection temp_ControlPoints = beam.ControlPoints;
+                string machineId = beam.TreatmentUnit?.Id;
+                if (string.Equals(machineId, "Edge2018", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(machineId, "TrueBeam3232", StringComparison.OrdinalIgnoreCase))
+                {
+                    MmoTherapyBeams[iBeam] = MeanMlcOpening.CalculateSingleLayer(
+                        temp_ControlPoints.Select(controlPoint => controlPoint.LeafPositions));
+                    continue;
+                }
 
                 int NLeafsPairsOpen = 0;
                 double LeafPairsOpenings = 0;
