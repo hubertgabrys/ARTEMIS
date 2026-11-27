@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="USZ_ARTEMIS.StartPage"
+<UserControl x:Class="USZ_ARTEMIS.StartPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -131,9 +131,11 @@
             </GroupBox>
 
             <GroupBox Header="Treatment Machine" Grid.Row="1">
-                <ComboBox x:Name="cbMachine" SelectedIndex="0">
+                <ComboBox x:Name="cbMachine" SelectedIndex="0"
+                          SelectionChanged="CbMachine_SelectionChanged">
                     <ComboBoxItem Content="Edge2018"/>
                     <ComboBoxItem Content="TrueBeam3232"/>
+                    <ComboBoxItem Content="Accela1008"/>
                 </ComboBox>
             </GroupBox>
 
@@ -201,10 +203,10 @@
                             Click="BtnComparePlans_Click"
                             Margin="0,0,0,8"/>
 
-                    <Button x:Name="btnSendToSciMoCa"
+                    <Button x:Name="btnSendPlan"
                             Grid.Row="1"
                             Content="Send to SciMoCa"
-                            Click="BtnSendToSciMoCa_Click"
+                            Click="BtnSendPlan_Click"
                             Margin="0,0,0,8"/>
 
                     <Button x:Name="btnPerformQA"

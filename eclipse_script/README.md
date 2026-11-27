@@ -132,6 +132,38 @@ the information and warning dialogs on Eclipse 19.0 with each target structure
 present and absent, both Water structure IDs present, an empty target structure,
 and correct, missing, or incorrect named material overrides.
 
+## Accela QA and plan adaptation
+
+Choose `Accela1008` under **Treatment Machine** to send a calculated plan to
+DoseCHECK or perform water PSQA through DoseCHECK. Calculate and save the adapted
+plan in Eclipse and reopen ARTEMIS with that plan active before exporting. ARTEMIS
+checks the treatment beams against the selected QA workflow. The exporter also
+requires the saved Eclipse plan ID to match the RT Plan Label in the DICOM
+database.
+
+Configure `DoseCheckExecutablePath`, `DoseCheckWorkingDirectory`,
+`DoseCheckPsqaExecutablePath`, and `DoseCheckPsqaWorkingDirectory` in the local
+JSON. Deploy the executables with their existing environment configuration.
+ARTEMIS reports listener acceptance, and the final result is available in
+DoseCHECK. Water PSQA sends a derived DICOM set with a `_QW` plan label and
+uses the original Eclipse dose grid for comparison. The original label must
+leave room for that suffix within the DICOM 16-character limit.
+
+Set `AccelaPlanCopyEnabled` to `true` where the source beam configurations,
+Accela retargeting, existing IGRT couch model and configuration, and calculation
+model have been commissioned. QA of an existing Accela plan is available
+independently of this setting. On Eclipse 19.0, verify setup and treatment beam
+geometry, MLC and control-point compatibility, couch placement, and explicit
+cleanup or discard instructions on incompatible inputs.
+
+SciMoCa, standard DoseCHECK, and DoseCHECK water PSQA use the same
+`FLAG_BLOCK_SCRIPT` on the production SMB share. Drain in-flight exports and
+update or roll back the three exporters together, including the paths used by
+standalone Eclipse scripts. Validate permissions and lock handoff in separate
+Citrix sessions on one host and across hosts before clinical deployment. Use
+commissioned test cases to verify both DoseCHECK results and exercise the
+existing Edge and TrueBeam QA actions.
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and

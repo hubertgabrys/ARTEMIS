@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -10,6 +11,7 @@ using System.Windows.Media;
 using USZ_ARTEMIS.Configuration;
 using USZ_ARTEMIS.Core.QA;
 using USZ_ARTEMIS.QA;
+using USZ_ARTEMIS.Tools;
 using VMS.TPS.Common.Model.API;
 
 namespace USZ_ARTEMIS
@@ -218,7 +220,35 @@ namespace USZ_ARTEMIS
             });
         }
 
-        private void BtnPerformQA_Click(object sender, RoutedEventArgs e)
+        private void CbMachine_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateQaSendLabel();
+        }
+
+        private void UpdateQaSendLabel()
+        {
+            // SelectionChanged can fire before the QA buttons are created by XAML.
+            if (btnSendPlan != null)
+                btnSendPlan.Content = DoseCheckLauncher.IsAccelaMachine(GetSelectedMachineId())
+                    ? "Send to DoseCHECK"
+                    : "Send to SciMoCa";
+        }
+
+        private async void BtnPerformQA_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetQaPlan(out PlanSetup plan, out bool useDoseCheck))
+                return;
+
+            if (useDoseCheck)
+            {
+                await RunDoseCheckAsync(plan, waterPsqa: true);
+                return;
+            }
+
+            PerformEclipseWaterQa();
+        }
+
+        private void PerformEclipseWaterQa()
         {
             Course qaCourse = Tools.Actions.CreateQaCourse(context, GetSelectedCourse());
             qaCourse.CopyPlanSetup(GetSelectedPlan());
@@ -237,15 +267,87 @@ namespace USZ_ARTEMIS
             SyntheticCT.CreatePDF(context, GetSelectedPlan(), qaPlanWater);
         }
 
-        private void BtnSendToSciMoCa_Click(object sender, RoutedEventArgs e)
+        private async void BtnSendPlan_Click(object sender, RoutedEventArgs e)
         {
-            string patientId = context.Patient.Id;
-            string planSetupId = context.PlanSetup.Id;
-            string planSetupUID = context.PlanSetup.UID;
-            string planDoseUID = context.PlanSetup.Dose.UID;
-            string username = Environment.UserName;
+            if (!TryGetQaPlan(out PlanSetup plan, out bool useDoseCheck))
+                return;
 
-            Scimoca.SendToScimoca(patientId, planSetupId, planSetupUID, planDoseUID, username);
+            if (useDoseCheck)
+            {
+                await RunDoseCheckAsync(plan, waterPsqa: false);
+                return;
+            }
+
+            try
+            {
+                if (!plan.IsDoseValid || string.IsNullOrWhiteSpace(plan.Dose?.UID))
+                    throw new InvalidOperationException("Calculate the dose of the open plan before sending it.");
+
+                Scimoca.SendToScimoca(context.Patient.Id, plan.Id, plan.UID, plan.Dose.UID, Environment.UserName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Send to SciMoCa", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private bool TryGetQaPlan(out PlanSetup plan, out bool useDoseCheck)
+        {
+            plan = GetSelectedPlan();
+            useDoseCheck = false;
+            try
+            {
+                if (plan == null || context.Patient == null)
+                    throw new InvalidOperationException("Open the treatment plan in Eclipse before running QA.");
+
+                useDoseCheck = DoseCheckLauncher.UseDoseCheck(GetSelectedMachineId(), plan.Beams
+                    .Where(beam => !beam.IsSetupField)
+                    .Select(beam => beam.TreatmentUnit?.Id));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Treatment Machine", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+        }
+
+        private async Task RunDoseCheckAsync(PlanSetup plan, bool waterPsqa)
+        {
+            string title = waterPsqa ? "DoseCHECK water PSQA" : "Send to DoseCHECK";
+            string executable = waterPsqa ? AppPaths.DoseCheckPsqaExecutablePath : AppPaths.DoseCheckExecutablePath;
+            string workingDirectory = waterPsqa ? AppPaths.DoseCheckPsqaWorkingDirectory : AppPaths.DoseCheckWorkingDirectory;
+            btnSendPlan.IsEnabled = false;
+            btnPerformQA.IsEnabled = false;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(AppPaths.ConfigurationLoadError))
+                    throw new InvalidOperationException(AppPaths.ConfigurationLoadError);
+                if (!plan.IsDoseValid)
+                    throw new InvalidOperationException("Calculate and save the dose of the open plan before exporting it.");
+
+                var startInfo = DoseCheckLauncher.CreateStartInfo(executable, workingDirectory,
+                    context.Patient.Id, plan.Id, plan.UID, plan.Dose?.UID, Environment.UserName, waterPsqa);
+                int exitCode = await ExternalProcessLauncher.RunAsync(startInfo);
+                if (exitCode != 0)
+                    throw new InvalidOperationException(
+                        $"The exporter exited with code {exitCode}. Verify that the plan and dose were saved in Eclipse.\n" +
+                        $"Review the exporter log in {Path.Combine(Path.GetDirectoryName(executable), "logs")} " +
+                        "and check DoseCHECK for partial delivery before retrying.");
+
+                MessageBox.Show(
+                    "The DoseCHECK DICOM listener accepted the export. Check DoseCHECK for the result.",
+                    title, MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                btnSendPlan.IsEnabled = true;
+                btnPerformQA.IsEnabled = true;
+            }
         }
 
         private void BtnPerformRegCheck_Click(object sender, RoutedEventArgs e)
