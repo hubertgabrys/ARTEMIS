@@ -164,6 +164,32 @@ Citrix sessions on one host and across hosts before clinical deployment. Use
 commissioned test cases to verify both DoseCHECK results and exercise the
 existing Edge and TrueBeam QA actions.
 
+## MLC opening metrics in plan comparison
+
+For treatment beams on `Edge2018` and `TrueBeam3232`, **Compare to original
+plan** calculates mean MLC opening (MMO) from every leaf pair, including the
+first. It averages signed gaps greater than the existing 0.01 mm closure
+tolerance across the beam's control points. Crossed leaves are closed.
+
+**Compare to original plan** reports the Small Aperture Score (SAS10) for
+each treatment beam below MMO. The score is the percentage of open MLC leaf
+pairs with a gap strictly below 10 mm. ARTEMIS pools the leaf-pair observations
+across all recorded control points in each beam, using signed bank-to-bank
+gaps from ESAPI 19.0. Each observation counts equally and the gap uses the MLC
+positions before jaw clipping.
+
+The QA panel matches beams by exact ID and shows the open plan and base plan
+scores and their difference in percentage points. Available scores are
+informational. Missing, ambiguous, or invalid beam data produces an `n/a`
+warning with the reason while retaining an available score from the other plan.
+
+SAS10 uses the Core calculator embedded by Costura. After rebuilding and
+deploying the main plugin, verify a field with hand-counted leaf gaps, including
+a 10 mm gap, and representative IMRT and VMAT comparisons in Eclipse 19.0.
+Exercise reordered and unmatched beam IDs and a beam without an MLC. For
+Edge and TrueBeam, verify MMO with a hand-counted opening in the first leaf
+pair and a crossed pair that contributes nothing to the mean.
+
 ## Build
 
 Open `USZ_ARTEMIS.sln` in Visual Studio on Windows. Restore NuGet packages and

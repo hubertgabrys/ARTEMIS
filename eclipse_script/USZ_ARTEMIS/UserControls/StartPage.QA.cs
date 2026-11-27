@@ -89,15 +89,8 @@ namespace USZ_ARTEMIS
             }
             AddQaOutputSeparator(outputQA);
 
-            List<Beam> inBeamsSelected = selectedPlan.Beams.ToList();
-            List<Beam> therapyBeamsSelected = new List<Beam>();
-            foreach (Beam beam in inBeamsSelected)
-            {
-                if (!beam.IsSetupField)
-                {
-                    therapyBeamsSelected.Add(beam);
-                }
-            }
+            List<Beam> therapyBeamsSelected = selectedPlan.Beams.Where(beam => !beam.IsSetupField).ToList();
+            List<Beam> therapyBeamsOriginal = originalPlan.Beams.Where(beam => !beam.IsSetupField).ToList();
 
             int numberOfTherapyBeamsSelected = therapyBeamsSelected.Count;
 
@@ -128,14 +121,13 @@ namespace USZ_ARTEMIS
             {
                 double adaptedMmo = adaptedMmos[i];
                 double originalMmo = originalMmos[i];
+                string mmoText = $"MMO {therapyBeamsSelected[i].Id} = {adaptedMmo:F1} mm (reference {originalMmo:F1} mm";
 
                 if (Math.Abs(originalMmo) < 1e-9)
                 {
                     AddQaStatusLine(
                         outputQA,
-                        "MMO = " + adaptedMmo.ToString("F1") +
-                        " mm (reference " + originalMmo.ToString("F1") +
-                        " mm; n/a)",
+                        mmoText + "; n/a)",
                         QaStatusClassifier.ForMmoChange(null));
                 }
                 else
@@ -147,12 +139,13 @@ namespace USZ_ARTEMIS
 
                     AddQaStatusLine(
                         outputQA,
-                        "MMO = " + adaptedMmo.ToString("F1") +
-                        " mm (reference " + originalMmo.ToString("F1") +
-                        " mm; " + sign + displayedChangePerc.ToString("F1") + "%)",
+                        $"{mmoText}; {sign}{displayedChangePerc:F1}%)",
                         QaStatusClassifier.ForMmoChange(displayedChangePerc));
                 }
             }
+            AddQaOutputSeparator(outputQA);
+
+            AddSas10Comparison(outputQA, therapyBeamsSelected, therapyBeamsOriginal);
             AddQaOutputSeparator(outputQA);
 
             foreach (TargetVolumeComparison comparison in QA.Tools.GetAllTargetVolumeComparisons(selectedPlan, originalPlan))
@@ -171,16 +164,6 @@ namespace USZ_ARTEMIS
                 totalMuSelected += therapyBeamsSelected[iBeam].Meterset.Value;
             }
 
-            List<Beam> inBeamsOriginal = originalPlan.Beams.ToList();
-            List<Beam> therapyBeamsOriginal = new List<Beam>();
-            foreach (Beam beam in inBeamsOriginal)
-            {
-                if (!beam.IsSetupField)
-                {
-                    therapyBeamsOriginal.Add(beam);
-                }
-            }
-
             int numberOfTherapyBeamsOriginal = therapyBeamsOriginal.Count;
             for (int iBeam = 0; iBeam < numberOfTherapyBeamsOriginal; iBeam++)
             {
@@ -197,6 +180,63 @@ namespace USZ_ARTEMIS
             AddQaOutputSeparator(outputQA);
 
             txtOutputQA.Document = outputQA;
+        }
+
+        private static void AddSas10Comparison(FlowDocument document, IEnumerable<Beam> selectedBeams, IEnumerable<Beam> originalBeams)
+        {
+            var selectedById = selectedBeams.ToLookup(beam => beam.Id, StringComparer.Ordinal);
+            var originalById = originalBeams.ToLookup(beam => beam.Id, StringComparer.Ordinal);
+            if (selectedById.Count == 0 && originalById.Count == 0)
+            {
+                AddQaStatusLine(document, "SAS10 = n/a (no treatment beams)", QaStatus.Warning);
+                return;
+            }
+
+            var beamIds = selectedById.Select(group => group.Key)
+                .Union(originalById.Select(group => group.Key), StringComparer.Ordinal);
+            foreach (string beamId in beamIds)
+            {
+                string selectedText = DescribeSas10(selectedById[beamId], out double? selectedPercentage);
+                string originalText = DescribeSas10(originalById[beamId], out double? originalPercentage);
+                string line = $"SAS10 {beamId} = {selectedText} (reference {originalText}";
+                if (selectedPercentage.HasValue && originalPercentage.HasValue)
+                {
+                    double change = QaStatusClassifier.RoundPercentageForDisplay(
+                        selectedPercentage.Value - originalPercentage.Value, 1);
+                    AddQaOutputLine(document, $"{line}; {change:+0.0;-0.0;0.0} pp)");
+                }
+                else
+                {
+                    AddQaStatusLine(document, line + ")", QaStatus.Warning);
+                }
+            }
+        }
+
+        private static string DescribeSas10(IEnumerable<Beam> beamsWithSameId, out double? percentage)
+        {
+            percentage = null;
+            Beam[] beams = beamsWithSameId.ToArray();
+            if (beams.Length == 0)
+                return "n/a (beam ID absent)";
+            if (beams.Length > 1)
+                return "n/a (duplicate beam ID)";
+
+            SmallApertureScoreResult score = SmallApertureScore.Calculate(
+                beams[0].ControlPoints.Select(controlPoint => controlPoint.LeafPositions));
+            percentage = score.Percentage;
+            switch (score.Status)
+            {
+                case SmallApertureScoreStatus.Available:
+                    return $"{percentage:F1}%";
+                case SmallApertureScoreStatus.NoMlc:
+                    return "n/a (no MLC)";
+                case SmallApertureScoreStatus.NoControlPoints:
+                    return "n/a (no control points)";
+                case SmallApertureScoreStatus.NoOpenLeafPairs:
+                    return "n/a (no open MLC leaf pairs)";
+                default:
+                    return "n/a (invalid MLC leaf positions)";
+            }
         }
 
         private PlanSetup SelectBasePlan(PlanSetup selectedPlan)
@@ -298,7 +338,7 @@ namespace USZ_ARTEMIS
 
         private static void AddQaOutputSeparator(FlowDocument document)
         {
-            AddQaOutputLine(document, "________________________________");
+            AddQaOutputLine(document, "________________");
             document.Blocks.Add(new Paragraph
             {
                 Margin = new Thickness(0),
