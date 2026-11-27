@@ -92,60 +92,11 @@ namespace USZ_ARTEMIS
             List<Beam> therapyBeamsSelected = selectedPlan.Beams.Where(beam => !beam.IsSetupField).ToList();
             List<Beam> therapyBeamsOriginal = originalPlan.Beams.Where(beam => !beam.IsSetupField).ToList();
 
-            int numberOfTherapyBeamsSelected = therapyBeamsSelected.Count;
-
-            List<double> adaptedMmos = new List<double>();
-            int counterSelected = 0;
-            foreach (double mmo in MetricsCalc.MMO(selectedPlan.Beams))
-            {
-                if (counterSelected != 0 && counterSelected <= numberOfTherapyBeamsSelected)
-                {
-                    adaptedMmos.Add(mmo);
-                }
-                counterSelected++;
-            }
-
-            List<double> originalMmos = new List<double>();
-            int counterOriginal = 0;
-            foreach (double mmo in MetricsCalc.MMO(originalPlan.Beams))
-            {
-                if (counterOriginal != 0 && counterOriginal <= numberOfTherapyBeamsSelected)
-                {
-                    originalMmos.Add(mmo);
-                }
-                counterOriginal++;
-            }
-
-            int numberOfMmoPairs = Math.Min(adaptedMmos.Count, originalMmos.Count);
-            for (int i = 0; i < numberOfMmoPairs; i++)
-            {
-                double adaptedMmo = adaptedMmos[i];
-                double originalMmo = originalMmos[i];
-                string mmoText = $"MMO {therapyBeamsSelected[i].Id} = {adaptedMmo:F1} mm (reference {originalMmo:F1} mm";
-
-                if (Math.Abs(originalMmo) < 1e-9)
-                {
-                    AddQaStatusLine(
-                        outputQA,
-                        mmoText + "; n/a)",
-                        QaStatusClassifier.ForMmoChange(null));
-                }
-                else
-                {
-                    double changePerc = 100.0 * (adaptedMmo - originalMmo) / originalMmo;
-                    double displayedChangePerc =
-                        QaStatusClassifier.RoundPercentageForDisplay(changePerc, 1);
-                    string sign = displayedChangePerc >= 0 ? "+" : "";
-
-                    AddQaStatusLine(
-                        outputQA,
-                        $"{mmoText}; {sign}{displayedChangePerc:F1}%)",
-                        QaStatusClassifier.ForMmoChange(displayedChangePerc));
-                }
-            }
+            var beamPairs = BeamPairing.ById(therapyBeamsSelected, therapyBeamsOriginal, beam => beam.Id).ToList();
+            AddMmoComparison(outputQA, beamPairs);
             AddQaOutputSeparator(outputQA);
 
-            AddSas10Comparison(outputQA, therapyBeamsSelected, therapyBeamsOriginal);
+            AddSas10Comparison(outputQA, beamPairs);
             AddQaOutputSeparator(outputQA);
 
             foreach (TargetVolumeComparison comparison in QA.Tools.GetAllTargetVolumeComparisons(selectedPlan, originalPlan))
@@ -159,9 +110,9 @@ namespace USZ_ARTEMIS
 
             double totalMuSelected = 0;
             double totalMuOriginal = 0;
-            for (int iBeam = 0; iBeam < numberOfTherapyBeamsSelected; iBeam++)
+            foreach (Beam beam in therapyBeamsSelected)
             {
-                totalMuSelected += therapyBeamsSelected[iBeam].Meterset.Value;
+                totalMuSelected += beam.Meterset.Value;
             }
 
             int numberOfTherapyBeamsOriginal = therapyBeamsOriginal.Count;
@@ -182,23 +133,56 @@ namespace USZ_ARTEMIS
             txtOutputQA.Document = outputQA;
         }
 
-        private static void AddSas10Comparison(FlowDocument document, IEnumerable<Beam> selectedBeams, IEnumerable<Beam> originalBeams)
+        private static void AddMmoComparison(FlowDocument document, IReadOnlyList<BeamPair<Beam>> beamPairs)
         {
-            var selectedById = selectedBeams.ToLookup(beam => beam.Id, StringComparer.Ordinal);
-            var originalById = originalBeams.ToLookup(beam => beam.Id, StringComparer.Ordinal);
-            if (selectedById.Count == 0 && originalById.Count == 0)
+            foreach (BeamPair<Beam> pair in beamPairs)
+            {
+                string selectedText = DescribeMmo(pair.Selected, out double? selectedMmo);
+                string referenceText = DescribeMmo(pair.Reference, out double? referenceMmo);
+                double? displayedChange = null;
+                string changeText = "n/a";
+                if (selectedMmo.HasValue && referenceMmo.HasValue && Math.Abs(referenceMmo.Value) >= 1e-9)
+                {
+                    double change = 100.0 * (selectedMmo.Value - referenceMmo.Value) / referenceMmo.Value;
+                    displayedChange = QaStatusClassifier.RoundPercentageForDisplay(change, 1);
+                    string sign = displayedChange.Value >= 0 ? "+" : "";
+                    changeText = $"{sign}{displayedChange:F1}%";
+                }
+
+                AddQaStatusLine(document,
+                    $"MMO {pair.Id} = {selectedText} (reference {referenceText}; {changeText})",
+                    QaStatusClassifier.ForMmoChange(displayedChange));
+            }
+        }
+
+        private static string DescribeMmo(IReadOnlyList<Beam> beamsWithSameId, out double? mmo)
+        {
+            mmo = null;
+            string unavailable = DescribeUnavailableBeam(beamsWithSameId.Count);
+            if (unavailable != null)
+                return unavailable;
+
+            double opening = MetricsCalc.GetMeanMlcOpening(beamsWithSameId[0]);
+            if (double.IsNaN(opening) || double.IsInfinity(opening))
+                return "n/a (unavailable MLC opening)";
+
+            mmo = opening;
+            return $"{opening:F1} mm";
+        }
+
+        private static void AddSas10Comparison(FlowDocument document, IReadOnlyList<BeamPair<Beam>> beamPairs)
+        {
+            if (beamPairs.Count == 0)
             {
                 AddQaStatusLine(document, "SAS10 = n/a (no treatment beams)", QaStatus.Warning);
                 return;
             }
 
-            var beamIds = selectedById.Select(group => group.Key)
-                .Union(originalById.Select(group => group.Key), StringComparer.Ordinal);
-            foreach (string beamId in beamIds)
+            foreach (BeamPair<Beam> pair in beamPairs)
             {
-                string selectedText = DescribeSas10(selectedById[beamId], out double? selectedPercentage);
-                string originalText = DescribeSas10(originalById[beamId], out double? originalPercentage);
-                string line = $"SAS10 {beamId} = {selectedText} (reference {originalText}";
+                string selectedText = DescribeSas10(pair.Selected, out double? selectedPercentage);
+                string originalText = DescribeSas10(pair.Reference, out double? originalPercentage);
+                string line = $"SAS10 {pair.Id} = {selectedText} (reference {originalText}";
                 if (selectedPercentage.HasValue && originalPercentage.HasValue)
                 {
                     double change = QaStatusClassifier.RoundPercentageForDisplay(
@@ -212,17 +196,24 @@ namespace USZ_ARTEMIS
             }
         }
 
-        private static string DescribeSas10(IEnumerable<Beam> beamsWithSameId, out double? percentage)
+        private static string DescribeUnavailableBeam(int count)
+        {
+            if (count == 0)
+                return "n/a (beam ID absent)";
+            if (count > 1)
+                return "n/a (duplicate beam ID)";
+            return null;
+        }
+
+        private static string DescribeSas10(IReadOnlyList<Beam> beamsWithSameId, out double? percentage)
         {
             percentage = null;
-            Beam[] beams = beamsWithSameId.ToArray();
-            if (beams.Length == 0)
-                return "n/a (beam ID absent)";
-            if (beams.Length > 1)
-                return "n/a (duplicate beam ID)";
+            string unavailable = DescribeUnavailableBeam(beamsWithSameId.Count);
+            if (unavailable != null)
+                return unavailable;
 
             SmallApertureScoreResult score = SmallApertureScore.Calculate(
-                beams[0].ControlPoints.Select(controlPoint => controlPoint.LeafPositions));
+                beamsWithSameId[0].ControlPoints.Select(controlPoint => controlPoint.LeafPositions));
             percentage = score.Percentage;
             switch (score.Status)
             {

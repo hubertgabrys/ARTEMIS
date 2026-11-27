@@ -178,17 +178,19 @@ across all recorded control points in each beam, using signed bank-to-bank
 gaps from ESAPI 19.0. Each observation counts equally and the gap uses the MLC
 positions before jaw clipping.
 
-The QA panel matches beams by exact ID and shows the open plan and base plan
-scores and their difference in percentage points. Available scores are
-informational. Missing, ambiguous, or invalid beam data produces an `n/a`
-warning with the reason while retaining an available score from the other plan.
+The QA panel matches treatment beams by exact ID for both MMO and SAS10. MMO
+shows the relative percentage change. SAS10 shows the difference in percentage
+points and uses informational styling for valid comparisons. Missing, ambiguous,
+or invalid beam data produces an `n/a` warning with the reason while retaining
+an available score from the other plan.
 
 SAS10 uses the Core calculator embedded by Costura. After rebuilding and
 deploying the main plugin, verify a field with hand-counted leaf gaps, including
 a 10 mm gap, and representative IMRT and VMAT comparisons in Eclipse 19.0.
-Exercise reordered and unmatched beam IDs and a beam without an MLC. For
-Edge and TrueBeam, verify MMO with a hand-counted opening in the first leaf
-pair and a crossed pair that contributes nothing to the mean.
+Exercise reordered and unmatched beam IDs in both metrics, including a manually
+selected base plan with fewer treatment beams. Also exercise a beam without an
+MLC. For Edge and TrueBeam, verify MMO with a hand-counted opening in the first
+leaf pair and a crossed pair that contributes nothing to the mean.
 
 ## Build
 
