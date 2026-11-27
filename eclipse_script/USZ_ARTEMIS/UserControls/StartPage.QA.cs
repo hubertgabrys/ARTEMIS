@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Interop;
 using System.Windows.Media;
 using USZ_ARTEMIS.Configuration;
 using USZ_ARTEMIS.Core.QA;
@@ -24,13 +25,33 @@ namespace USZ_ARTEMIS
 
         private void BtnComparePlans_Click(object sender, RoutedEventArgs e)
         {
+            txtOutputQA.Document.Blocks.Clear();
             PlanSetup selectedPlan = GetSelectedPlan();
-            PlanSetup originalPlan = QA.Tools.GetOriginalPlan(selectedPlan);
+            if (selectedPlan == null)
+            {
+                MessageBox.Show("Open a plan to compare.", "Compare plans",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            PlanSetup originalPlan = QA.Tools.GetOriginalPlan(selectedPlan) ?? SelectBasePlan(selectedPlan);
+            if (originalPlan == null)
+                return;
+
+            if (selectedPlan.PrimaryReferencePoint == null || originalPlan.PrimaryReferencePoint == null ||
+                selectedPlan.StructureSet == null || originalPlan.StructureSet == null)
+            {
+                MessageBox.Show(
+                    $"Both plans ({selectedPlan.Id} and {originalPlan.Id}) need a primary reference point and a structure set.",
+                    "Compare plans", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
             FlowDocument outputQA = new FlowDocument
             {
                 PagePadding = new Thickness(4)
             };
+            AddQaOutputLine(outputQA, $"Plan {selectedPlan.Id} compared with base plan {originalPlan.Id}");
 
             bool isDosePerFractionIdentical =
                 selectedPlan.DosePerFraction.ValueAsString.Equals(originalPlan.DosePerFraction.ValueAsString);
@@ -176,6 +197,71 @@ namespace USZ_ARTEMIS
             AddQaOutputSeparator(outputQA);
 
             txtOutputQA.Document = outputQA;
+        }
+
+        private PlanSetup SelectBasePlan(PlanSetup selectedPlan)
+        {
+            Course course = selectedPlan.Course;
+            var candidates = course.PlanSetups
+                .Where(plan => !string.Equals(plan.Id, selectedPlan.Id, StringComparison.Ordinal))
+                .OrderBy(plan => plan.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                MessageBox.Show($"Course {course.Id} has no other plans to compare with {selectedPlan.Id}.",
+                    "Select base plan", MessageBoxButton.OK, MessageBoxImage.Information);
+                return null;
+            }
+
+            var owner = ResolveShownOwnerWindow();
+            if (owner != null)
+                new WindowInteropHelper(owner).EnsureHandle();
+
+            var dialog = new Window
+            {
+                Title = "Select base plan",
+                Owner = owner,
+                WindowStartupLocation = owner == null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+                Width = 420,
+                Height = 340,
+                MinWidth = 340,
+                MinHeight = 260
+            };
+            var prompt = new TextBlock
+            {
+                Text = $"No original plan was found automatically for {selectedPlan.Id}. " +
+                       $"Select a base plan from course {course.Id}.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            var plans = new ListBox { ItemsSource = candidates, DisplayMemberPath = nameof(PlanSetup.Id) };
+            var compare = new Button { Content = "Compare", MinWidth = 80, IsDefault = true, IsEnabled = false };
+            plans.SelectionChanged += (sender, args) => compare.IsEnabled = plans.SelectedItem != null;
+            compare.Click += (sender, args) => dialog.DialogResult = true;
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            buttons.Children.Add(compare);
+            buttons.Children.Add(new Button
+            {
+                Content = "Cancel", MinWidth = 80, IsCancel = true, Margin = new Thickness(8, 0, 0, 0)
+            });
+
+            var content = new DockPanel { Margin = new Thickness(12) };
+            DockPanel.SetDock(prompt, Dock.Top);
+            DockPanel.SetDock(buttons, Dock.Bottom);
+            content.Children.Add(prompt);
+            content.Children.Add(buttons);
+            content.Children.Add(plans);
+            dialog.Content = content;
+
+            return dialog.ShowDialog() == true ? (PlanSetup)plans.SelectedItem : null;
         }
 
         private static void AddQaStatusLine(FlowDocument document, string text, QaStatus status)

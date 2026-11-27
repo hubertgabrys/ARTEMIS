@@ -187,6 +187,13 @@ Before clinical deployment, validate on the licensed Eclipse 19.0 workstation:
   assignment failures. If cleanup or restoration fails, discard the changes.
 - Exercise plan copying, structure creation and metadata rules, clinical-goal
   evaluation, and QA/reporting against commissioned test cases.
+- Exercise **Compare to original plan** with exact and shortened ID matches.
+  Confirm each compares automatically. Use an unmatched ID in a course with
+  several plans and verify the picker offers only the other plans in that
+  course. Select a base plan and check its ID in the report. Repeat and cancel,
+  including by closing the picker, and confirm the report area clears. With
+  only one plan in the course, confirm the action explains that there are no
+  other plans to compare.
 - Verify automatic material table assignment, an already matching table, and
   warning-only continuation when the table is unavailable or assignment fails.
   Confirm `AcurosXB-13.5` is commissioned for the intended workflow and that
