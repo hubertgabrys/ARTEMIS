@@ -174,6 +174,31 @@ def test_stop_during_imaging_does_not_start_registration(workflow):
     assert all(delay != 5000 for delay, _ in workflow.timers.values())
 
 
+@pytest.mark.parametrize("accela", [False, True])
+def test_base_plan_failure_stops_only_registration_dependent_automation(workflow, monkeypatch, accela):
+    def fail_fetch(*args):
+        raise ConnectionError("Simulated base-plan transfer failure")
+
+    monkeypatch.setattr(app, "get_base_plan", fail_fetch)
+    if accela:
+        workflow.settings[2].invoke()
+
+    workflow.button.invoke()
+    workflow.workers.pop(0)()
+
+    register = next(
+        widget for widget in descendants(workflow.sections["Manual workflow"])
+        if isinstance(widget, tk.Button) and widget.cget("text") == "Register"
+    )
+    assert register.cget("state") == tk.DISABLED
+    if accela:
+        assert workflow.status.cget("text") == "Running"
+        assert len(workflow.workers) == 1  # imaging refresh
+    else:
+        assert workflow.status.cget("text") == "Stopped"
+        assert workflow.workers == []
+
+
 def test_registration_rejection_stops_automation(workflow, monkeypatch):
     approvals = []
 

@@ -698,8 +698,12 @@ def main():
         if automation_state["accela_adaptation"]:
             automation_log("Accela adaptation enabled. Sending imaging only.")
 
-        def base_plan_finished() -> None:
+        def base_plan_finished(success: bool) -> None:
             automation_state["base_plan_in_progress"] = False
+            if not success and not automation_state["accela_adaptation"] and automation_state["active"]:
+                automation_log("Base plan unavailable. Stopping full automation.")
+                stop_full_automation()
+                return
             update_automation_controls()
             automation_loop()
 
@@ -783,12 +787,14 @@ def main():
                 print(f"{get_datetime()} Getting the base plan took {time.time() - start_time:.2f} seconds")
                 print(f"{get_datetime()} DONE\n")
             else:
+                base_series_info.clear()
+                update_bp_selection()
                 baseplan_status.config(text="\u274C", fg="red")
                 print(f"{get_datetime()} Failed to get base plan: {error}")
+            btn_register.config(state=tk.NORMAL if error is None else tk.DISABLED)
             if completion_callback is not None:
                 btn_baseplan.config(state=tk.NORMAL)
-                btn_register.config(state=tk.NORMAL)
-                completion_callback()
+                completion_callback(error is None)
 
         def worker():
             try:
